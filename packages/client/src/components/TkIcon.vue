@@ -38,4 +38,7 @@ const svg = computed<string>(() => {
   vertical-align: -0.125em;
   fill: currentColor;
 }
+.twikoo .tk-icon svg.lucide {
+  fill: none;
+}
 </style>
