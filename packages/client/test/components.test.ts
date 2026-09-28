@@ -153,13 +153,44 @@ describe("TkSubmit", () => {
 
   it("预览：marked 渲染 + 消毒", async () => {
     useFakeTcb();
-    const wrapper = mount(TkSubmit, { props: { config: {} } });
+    const wrapper = mount(TkSubmit, { attachTo: document.body, props: { config: {} } });
     await flushPromises();
     await wrapper.find("textarea").setValue("**加粗预览**");
-    await wrapper.find(".tk-preview").trigger("click");
+    expect(wrapper.findAll(".tk-editor-toolbar button")).toHaveLength(1);
+    expect(wrapper.find(".tk-preview-toggle").attributes("aria-label")).toBe(t("SUBMIT_PREVIEW"));
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    expect(wrapper.find(".tk-preview-toggle").attributes("aria-label")).toBe(t("SUBMIT_EDIT"));
     await flushPromises();
     expect(wrapper.find(".tk-preview-container").exists()).toBe(true);
     expect(wrapper.find(".tk-preview-container").html()).toContain("<strong>加粗预览</strong>");
+    expect(wrapper.find("textarea").isVisible()).toBe(false);
+    expect(wrapper.find(".tk-editor .tk-preview-container").exists()).toBe(true);
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    expect(wrapper.find("textarea").isVisible()).toBe(true);
+    expect(wrapper.find(".tk-preview-container").exists()).toBe(false);
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe("**加粗预览**");
+    expect(wrapper.find(".tk-preview-toggle").attributes("aria-label")).toBe(t("SUBMIT_PREVIEW"));
+    wrapper.unmount();
+  });
+
+  it("预览保留选区，返回编辑恢复焦点，并提示空草稿", async () => {
+    useFakeTcb();
+    const wrapper = mount(TkSubmit, { attachTo: document.body, props: { config: {} } });
+    await flushPromises();
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    expect(wrapper.find(".tk-preview-empty").text()).toBe(t("SUBMIT_PREVIEW_EMPTY"));
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    const input = wrapper.find("textarea");
+    await input.setValue("hello **world**");
+    input.element.focus();
+    input.element.setSelectionRange(2, 5);
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    await wrapper.find(".tk-preview-toggle").trigger("click");
+    await flushPromises();
+    expect(document.activeElement).toBe(input.element);
+    expect(input.element.selectionStart).toBe(2);
+    expect(input.element.selectionEnd).toBe(5);
+    wrapper.unmount();
   });
 
   it("提交前回调：onSubmit 可原地修改待发送字段", async () => {
@@ -728,6 +759,37 @@ describe("配置导出 / 导入（复用 GET_CONFIG_FOR_ADMIN + SET_CONFIG，不
       ),
     );
     expect(calls).toEqual([]);
+    wrapper.unmount();
+  });
+});
+
+describe("内联管理图标", () => {
+  it("按钮具有翻译标签且保留隐藏与置顶操作", async () => {
+    const changes: unknown[] = [];
+    useFakeTcb({
+      COMMENT_SET_FOR_ADMIN: (data: Record<string, unknown>) => {
+        changes.push(data.set);
+        return { code: 0 };
+      },
+    });
+    setServerConfig({ IS_ADMIN: true });
+    const wrapper = mount(TkComment, { props: { comment: makeComment(), config: {} } });
+    await flushPromises();
+    for (const [key, expected] of [
+      ["ADMIN_COMMENT_HIDE", { isSpam: true }],
+      ["ADMIN_COMMENT_SHOW", { isSpam: false }],
+      ["ADMIN_COMMENT_TOP", { top: true }],
+      ["ADMIN_COMMENT_UNTOP", { top: false }],
+    ] as const) {
+      const button = wrapper.find(`.tk-actions button[aria-label="${t(key)}"]`);
+      expect(button.exists()).toBe(true);
+      expect(button.attributes("title")).toBe(t(key));
+      expect(button.attributes("type")).toBe("button");
+      expect(button.find("svg").exists()).toBe(true);
+      await button.trigger("click");
+      await flushPromises();
+      expect(changes.at(-1)).toEqual(expected);
+    }
     wrapper.unmount();
   });
 });
