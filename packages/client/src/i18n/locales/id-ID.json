@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "jam lalu",
   "TIMEAGO_MINUTES": "menit lalu",
   "TIMEAGO_NOW": "Baru saja",
-  "TIMEAGO_SECONDS": "detik lalu"
+  "TIMEAGO_SECONDS": "detik lalu",
+  "BUTTON_LOADING": "Memproses",
+  "BUTTON_SUCCESS": "Selesai"
 }

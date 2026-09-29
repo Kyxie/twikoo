@@ -5,15 +5,18 @@
  * loading 遮罩显隐；icon 按需 SVG（含未注册告警）；mini 与 small 尺寸有可见差异。
  */
 import { describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import TkButton from "../src/components/TkButton.vue";
 import TkInput from "../src/components/TkInput.vue";
 import TkLoading from "../src/components/TkLoading.vue";
 import TkIcon from "../src/components/TkIcon.vue";
+import TkConfirmDialog from "../src/components/TkConfirmDialog.vue";
 
 describe("TkButton（组合式）", () => {
   it("type×size 类名组合；mini 与 small 有可见差异（类名互斥）", () => {
-    const primary = mount(TkButton, { props: { type: "primary", size: "small" } });
+    const primary = mount(TkButton, {
+      props: { type: "primary", size: "small" },
+    });
     expect(primary.classes()).toContain("tk-button--primary");
     expect(primary.classes()).toContain("tk-button--small");
     const mini = mount(TkButton, { props: { size: "mini" } });
@@ -22,7 +25,9 @@ describe("TkButton（组合式）", () => {
   });
 
   it("disabled 与 loading 状态类 + 原生禁用 + loading 时渲染 spinner 图标", () => {
-    const wrapper = mount(TkButton, { props: { disabled: true, loading: true } });
+    const wrapper = mount(TkButton, {
+      props: { disabled: true, loading: true },
+    });
     expect(wrapper.classes()).toContain("is-disabled");
     expect(wrapper.classes()).toContain("is-loading");
     expect(wrapper.attributes("disabled")).toBeDefined();
@@ -38,6 +43,46 @@ describe("TkButton（组合式）", () => {
     await disabled.trigger("click");
     expect(disabled.emitted("click")).toBeUndefined();
   });
+
+  it("async action shows loading, keeps focus, then shows success before returning to idle", async () => {
+    vi.useFakeTimers();
+    let resolveAction!: (value: boolean) => void;
+    const action = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveAction = resolve;
+        }),
+    );
+    const wrapper = mount(TkButton, {
+      attachTo: document.body,
+      props: { action, successDuration: 800 },
+      slots: { default: "保存" },
+    });
+    const button = wrapper.find("button").element;
+    button.focus();
+    await wrapper.trigger("click");
+    expect(wrapper.attributes("data-status")).toBe("loading");
+    expect(wrapper.attributes("disabled")).toBeUndefined();
+    expect(document.activeElement).toBe(button);
+    await wrapper.trigger("click");
+    expect(action).toHaveBeenCalledTimes(1);
+    resolveAction(true);
+    await flushPromises();
+    expect(wrapper.attributes("data-status")).toBe("success");
+    expect(wrapper.find(".tk-button__success svg").exists()).toBe(true);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(wrapper.attributes("data-status")).toBe("idle");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("does not show success for an action that returns false", async () => {
+    const wrapper = mount(TkButton, { props: { action: async () => false } });
+    await wrapper.trigger("click");
+    await flushPromises();
+    expect(wrapper.attributes("data-status")).toBe("idle");
+    expect(wrapper.find(".tk-button__success").exists()).toBe(false);
+  });
 });
 
 describe("TkInput（组合式）", () => {
@@ -49,7 +94,13 @@ describe("TkInput（组合式）", () => {
 
   it("textarea 形态 + 字数统计（maxlength + showWordLimit）", () => {
     const wrapper = mount(TkInput, {
-      props: { type: "textarea", rows: 4, maxlength: 100, showWordLimit: true, modelValue: "abc" },
+      props: {
+        type: "textarea",
+        rows: 4,
+        maxlength: 100,
+        showWordLimit: true,
+        modelValue: "abc",
+      },
     });
     expect(wrapper.find("textarea").exists()).toBe(true);
     expect(wrapper.find(".tk-input__count").text()).toBe("3/100");
@@ -66,6 +117,36 @@ describe("TkInput（组合式）", () => {
   it("disabled 态样式类", () => {
     const wrapper = mount(TkInput, { props: { disabled: true } });
     expect(wrapper.classes()).toContain("is-disabled");
+  });
+});
+
+describe("TkConfirmDialog", () => {
+  it("cancels without confirming and restores focus", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const wrapper = mount(TkConfirmDialog, {
+      attachTo: document.body,
+      props: { message: "确认删除你的评论？" },
+    });
+    const confirmation = (wrapper.vm as unknown as { open(): Promise<boolean> }).open();
+    expect(wrapper.find("dialog").attributes("open")).toBeDefined();
+    await wrapper.find(".tk-confirm-dialog__actions button:first-child").trigger("click");
+    expect(await confirmation).toBe(false);
+    expect(document.activeElement).toBe(opener);
+    wrapper.unmount();
+    opener.remove();
+  });
+
+  it("confirms only from the delete button", async () => {
+    const wrapper = mount(TkConfirmDialog, {
+      attachTo: document.body,
+      props: { message: "确认删除你的评论？" },
+    });
+    const confirmation = (wrapper.vm as unknown as { open(): Promise<boolean> }).open();
+    await wrapper.find(".tk-confirm-dialog__actions button:last-child").trigger("click");
+    expect(await confirmation).toBe(true);
+    wrapper.unmount();
   });
 });
 

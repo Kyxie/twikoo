@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "giờ trước",
   "TIMEAGO_MINUTES": "phút trước",
   "TIMEAGO_NOW": "Vừa xong",
-  "TIMEAGO_SECONDS": "giây trước"
+  "TIMEAGO_SECONDS": "giây trước",
+  "BUTTON_LOADING": "Đang xử lý",
+  "BUTTON_SUCCESS": "Hoàn tất"
 }

@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "соатлар олдин",
   "TIMEAGO_MINUTES": "дақиқалар олдин",
   "TIMEAGO_NOW": "Ҳозиргина",
-  "TIMEAGO_SECONDS": "сониялар олдин"
+  "TIMEAGO_SECONDS": "сониялар олдин",
+  "BUTTON_LOADING": "Bajarilmoqda",
+  "BUTTON_SUCCESS": "Bajarildi"
 }

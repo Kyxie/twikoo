@@ -24,14 +24,18 @@
           :key="settingGroup.name"
           class="tk-admin-config-group"
         >
-          <summary class="tk-admin-config-group-title">{{ settingGroup.name }}</summary>
+          <summary class="tk-admin-config-group-title">
+            {{ settingGroup.name }}
+          </summary>
           <div
             v-for="setting in settingGroup.items"
             v-show="showSetting(setting)"
             :key="setting.key"
             class="tk-admin-config-item"
           >
-            <div class="tk-admin-config-title" :title="setting.key">{{ setting.key }}</div>
+            <div class="tk-admin-config-title" :title="setting.key">
+              {{ setting.key }}
+            </div>
             <div class="tk-admin-config-input">
               <select v-if="setting.options" v-model="setting.value" class="tk-admin-config-select">
                 <option v-for="opt in setting.options" :key="opt.value" :value="opt.value">
@@ -59,7 +63,9 @@
           </div>
         </details>
         <details class="tk-admin-config-group">
-          <summary class="tk-admin-config-group-title">{{ t("ADMIN_CONFIG_EMAIL_TEST") }}</summary>
+          <summary class="tk-admin-config-group-title">
+            {{ t("ADMIN_CONFIG_EMAIL_TEST") }}
+          </summary>
           <div class="tk-admin-config-email-test">
             <div class="tk-admin-config-email-test-desc">
               {{ t("ADMIN_CONFIG_EMAIL_TEST_HELP") }}
@@ -67,7 +73,7 @@
             <div class="tk-admin-config-input">
               <TkInput v-model="emailTestAddress" size="small">
                 <template #append>
-                  <TkButton type="info" @click="testEmail">
+                  <TkButton type="info" :action="testEmail">
                     {{ t("ADMIN_CONFIG_EMAIL_TEST_BTN") }}
                   </TkButton>
                 </template>
@@ -80,7 +86,7 @@
         </details>
       </div>
       <div class="tk-admin-config-actions">
-        <TkButton size="small" type="primary" native-type="submit">
+        <TkButton size="small" type="primary" :action="saveConfig">
           {{ t("ADMIN_CONFIG_SAVE") }}
         </TkButton>
         <TkButton size="small" type="info" @click="resetConfig">
@@ -225,7 +231,12 @@ function createSettings(): SettingGroup[] {
           ph: `${EXAMPLE()}站长`,
           value: "",
         },
-        { key: "COMMENT_BG_IMG", desc: t("ADMIN_CONFIG_ITEM_COMMENT_BG_IMG"), ph: "", value: "" },
+        {
+          key: "COMMENT_BG_IMG",
+          desc: t("ADMIN_CONFIG_ITEM_COMMENT_BG_IMG"),
+          ph: "",
+          value: "",
+        },
         {
           key: "GRAVATAR_CDN",
           desc: t("ADMIN_CONFIG_ITEM_GRAVATAR_CDN"),
@@ -394,7 +405,12 @@ function createSettings(): SettingGroup[] {
           ph: `${EXAMPLE()}false`,
           value: "",
         },
-        { key: "EMOTION_CDN", desc: t("ADMIN_CONFIG_ITEM_EMOTION_CDN"), ph: "", value: "" },
+        {
+          key: "EMOTION_CDN",
+          desc: t("ADMIN_CONFIG_ITEM_EMOTION_CDN"),
+          ph: "",
+          value: "",
+        },
         {
           key: "HIGHLIGHT",
           desc: t("ADMIN_CONFIG_ITEM_HIGHLIGHT"),
@@ -758,7 +774,10 @@ const emailTestResult = ref("");
 async function readConfig(): Promise<void> {
   loading.value = true;
   const res = await call(getAppState().tcb, "GET_CONFIG_FOR_ADMIN");
-  const result = (res.result ?? res) as { code?: number; config?: ServerConfig };
+  const result = (res.result ?? res) as {
+    code?: number;
+    config?: ServerConfig;
+  };
   if (result && !result.code && result.config) {
     Object.assign(serverConfig, result.config);
     serverVersion.value = String(result.config.VERSION ?? "");
@@ -807,7 +826,7 @@ function showSetting(setting: SettingItem): boolean {
 }
 
 /** 保存配置（只提交变更项；1.x saveConfig 对齐） */
-async function saveConfig(): Promise<void> {
+async function saveConfig(): Promise<boolean> {
   loading.value = true;
   message.value = "正在保存";
   const config: Record<string, string> = {};
@@ -819,21 +838,30 @@ async function saveConfig(): Promise<void> {
   }
   if (config.IMAGE_CDN !== undefined) config.SHOW_IMAGE = config.IMAGE_CDN ? "true" : "false";
   logger.info("保存配置", config);
-  await call(getAppState().tcb, "SET_CONFIG", { config });
+  const saved = await call(getAppState().tcb, "SET_CONFIG", { config });
+  const result = (saved.result ?? saved) as { code?: number };
+  if (result.code) {
+    loading.value = false;
+    return false;
+  }
   await readConfig();
   // 通知评论列表刷新配置与可见性（1.x app.$emit('configUpdated')）
   busEmit(EVENT_CONFIG_UPDATED);
   message.value = "保存成功";
   loading.value = false;
+  return true;
 }
 
 /** 发送测试邮件（1.x testEmail 对齐） */
-async function testEmail(): Promise<void> {
+async function testEmail(): Promise<boolean> {
   loading.value = true;
-  const res = await call(getAppState().tcb, "EMAIL_TEST", { mail: emailTestAddress.value });
+  const res = await call(getAppState().tcb, "EMAIL_TEST", {
+    mail: emailTestAddress.value,
+  });
   logger.info("邮件测试", res);
   emailTestResult.value = JSON.stringify(res);
   loading.value = false;
+  return true;
 }
 
 /** 配置已更新（保存或导入）后重新回填表单 */

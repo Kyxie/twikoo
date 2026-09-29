@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "시간 전",
   "TIMEAGO_MINUTES": "분 전",
   "TIMEAGO_NOW": "방금 전",
-  "TIMEAGO_SECONDS": "초 전"
+  "TIMEAGO_SECONDS": "초 전",
+  "BUTTON_LOADING": "처리 중",
+  "BUTTON_SUCCESS": "완료"
 }

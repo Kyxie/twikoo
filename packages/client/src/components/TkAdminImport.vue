@@ -12,7 +12,9 @@
       <p>{{ t("ADMIN_IMPORT_WARN") }}</p>
       <p>{{ warnText[source] }}</p>
     </div>
-    <div class="tk-admin-import-label">{{ t("ADMIN_IMPORT_SELECT_SOURCE") }}</div>
+    <div class="tk-admin-import-label">
+      {{ t("ADMIN_IMPORT_SELECT_SOURCE") }}
+    </div>
     <select v-model="source">
       <option disabled value="">{{ t("ADMIN_IMPORT_SELECT") }}</option>
       <option value="valine">Valine (JSON)</option>
@@ -24,10 +26,10 @@
     <div class="tk-admin-import-label">{{ t("ADMIN_IMPORT_SELECT_FILE") }}</div>
     <input ref="inputFileRef" type="file" value="" />
     <div class="tk-admin-import-actions">
-      <TkButton size="small" :disabled="loading" @click="uploadFile">
+      <TkButton size="small" :disabled="loading" :action="uploadFile">
         {{ t("ADMIN_IMPORT_COMMENT") }}
       </TkButton>
-      <TkButton size="small" :disabled="loading" @click="importConfig">
+      <TkButton size="small" :disabled="loading" :action="importConfig">
         {{ t("ADMIN_CONFIG_IMPORT") }}
       </TkButton>
     </div>
@@ -67,7 +69,9 @@ const warnText = reactive<Record<string, string>>({
 /** 文件选择框引用 */
 const inputFileRef = ref<HTMLInputElement>();
 /** 日志输入框引用（滚动到底用） */
-const logTextAreaRef = ref<{ inputEl?: HTMLInputElement | HTMLTextAreaElement }>();
+const logTextAreaRef = ref<{
+  inputEl?: HTMLInputElement | HTMLTextAreaElement;
+}>();
 
 /**
  * 追加一行日志并滚动到底（1.x log 对齐）。
@@ -84,15 +88,15 @@ function log(message: string): void {
 /**
  * 开始导入（1.x uploadFile 对齐）。
  */
-async function uploadFile(): Promise<void> {
+async function uploadFile(): Promise<boolean> {
   if (!source.value) {
     log(t("ADMIN_IMPORT_SOURCE_REQUIRED"));
-    return;
+    return false;
   }
   const filePath = inputFileRef.value?.files?.[0];
   if (!filePath) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
-    return;
+    return false;
   }
   log(t("ADMIN_IMPORT_START"));
   loading.value = true;
@@ -123,11 +127,14 @@ async function uploadFile(): Promise<void> {
     } else {
       await importFileToVercel(filePath);
     }
+    return true;
   } catch (e) {
     console.error(e);
     log((e as Error).message);
+    return false;
+  } finally {
+    loading.value = false;
   }
-  loading.value = false;
 }
 
 /**
@@ -180,43 +187,48 @@ function isPlainConfig(value: unknown): value is Record<string, string | number 
  * 固定覆盖语义：提交的全部导入项按同键覆盖写入。配置只可能来自 Twikoo 的
  * 导出文件，来源选错时提示并中止。
  */
-async function importConfig(): Promise<void> {
+async function importConfig(): Promise<boolean> {
   if (source.value !== "twikoo") {
     log(t("ADMIN_CONFIG_IMPORT_SOURCE_INVALID"));
-    return;
+    return false;
   }
   const file = inputFileRef.value?.files?.[0];
   if (!file) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
-    return;
+    return false;
   }
   loading.value = true;
   try {
     const parsed: unknown = JSON.parse(await readAsText(file));
     if (!isPlainConfig(parsed)) {
       log(t("ADMIN_CONFIG_IMPORT_INVALID"));
-      return;
+      return false;
     }
     // 导出文件不含 CREDENTIALS，手工构造的文件可能带上：摘掉以免覆盖本机凭证
     const imported = { ...parsed };
     delete imported.CREDENTIALS;
     log(t("ADMIN_CONFIG_IMPORTING"));
-    const res = await call(getAppState().tcb, "SET_CONFIG", { config: imported });
+    const res = await call(getAppState().tcb, "SET_CONFIG", {
+      config: imported,
+    });
     const result = (res.result ?? res) as { code?: number; message?: unknown };
     if (result.code === 0) {
       busEmit(EVENT_CONFIG_UPDATED);
       log(t("ADMIN_CONFIG_IMPORTED"));
+      return true;
     } else {
       const detail = typeof result.message === "string" ? result.message : "";
       log(`${t("ADMIN_CONFIG_IMPORT_FAILED")}${detail}`);
+      return false;
     }
   } catch (e) {
     console.error(e);
     log(`${t("ADMIN_CONFIG_IMPORT_FAILED")}${(e as Error).message}`);
+    return false;
+  } finally {
+    loading.value = false;
   }
-  loading.value = false;
 }
-
 </script>
 
 <style>

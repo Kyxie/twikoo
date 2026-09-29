@@ -11,22 +11,37 @@
 <template>
   <button
     class="tk-button"
+    :data-status="status"
     :class="[
       type !== 'default' ? `tk-button--${type}` : '',
       size ? `tk-button--${size}` : '',
-      { 'is-disabled': disabled, 'is-loading': loading },
+      {
+        'is-disabled': disabled,
+        'is-loading': loading || status === 'loading',
+      },
     ]"
-    :disabled="disabled || loading"
+    :disabled="(disabled && status === 'idle') || loading"
+    :aria-busy="status === 'loading' ? 'true' : undefined"
+    :aria-disabled="status === 'loading' ? 'true' : undefined"
     :type="nativeType"
     @click="handleClick"
   >
-    <TkIcon v-if="loading" name="spinner" class="tk-button__spinner" />
+    <TkIcon v-if="loading || status === 'loading'" name="spinner" class="tk-button__spinner" />
+    <TkIcon v-if="status === 'success'" name="circle-check" class="tk-button__success" />
     <span class="tk-button__label"><slot></slot></span>
+    <span v-if="status !== 'idle'" class="tk-button__announcement" role="status" aria-live="polite">
+      {{ t(status === "loading" ? "BUTTON_LOADING" : "BUTTON_SUCCESS") }}
+    </span>
   </button>
 </template>
 
 <script setup lang="ts">
+import { onUnmounted, ref } from "vue";
 import TkIcon from "./TkIcon.vue";
+import { t } from "../i18n";
+
+type Action = (evt: MouseEvent) => Promise<boolean | void>;
+type ButtonStatus = "idle" | "loading" | "success";
 
 /** 按钮视觉类型 */
 const props = withDefaults(
@@ -37,22 +52,55 @@ const props = withDefaults(
     size?: "large" | "mini" | "small" | "default" | "";
     disabled?: boolean;
     loading?: boolean;
+    action?: Action;
+    successDuration?: number;
     /** 原生 type */
     nativeType?: "button" | "submit" | "reset";
   }>(),
-  { type: "default", size: "", disabled: false, loading: false, nativeType: "button" },
+  {
+    type: "default",
+    size: "",
+    disabled: false,
+    loading: false,
+    action: undefined,
+    successDuration: 900,
+    nativeType: "button",
+  },
 );
 
 /** 点击事件（禁用/加载中不触发） */
 const emit = defineEmits<{ (e: "click", evt: MouseEvent): void }>();
+const status = ref<ButtonStatus>("idle");
+let resetTimer: ReturnType<typeof setTimeout> | undefined;
+onUnmounted(() => {
+  if (resetTimer) clearTimeout(resetTimer);
+});
 
 /**
  * 点击转发（禁用/加载中不触发）。
  * @param evt 点击事件
  */
-function handleClick(evt: MouseEvent): void {
-  if (props.disabled || props.loading) return;
-  emit("click", evt);
+async function handleClick(evt: MouseEvent): Promise<void> {
+  if (props.disabled || props.loading || status.value !== "idle") return;
+  if (!props.action) {
+    emit("click", evt);
+    return;
+  }
+  status.value = "loading";
+  try {
+    const result = await props.action(evt);
+    if (result === false) {
+      status.value = "idle";
+      return;
+    }
+    status.value = "success";
+    resetTimer = setTimeout(() => {
+      status.value = "idle";
+    }, props.successDuration);
+  } catch (error) {
+    status.value = "idle";
+    console.error(error);
+  }
 }
 </script>
 
@@ -175,6 +223,19 @@ function handleClick(evt: MouseEvent): void {
 }
 .twikoo .tk-button__spinner {
   margin-right: 4px;
+}
+.twikoo .tk-button__success {
+  margin-right: 4px;
+}
+.twikoo .tk-button__announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .twikoo .tk-button__spinner svg {
   animation: tk-spin 0.8s linear infinite;

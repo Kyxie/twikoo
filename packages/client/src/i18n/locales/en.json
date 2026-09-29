@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "hours ago",
   "TIMEAGO_MINUTES": "minutes ago",
   "TIMEAGO_NOW": "Just now",
-  "TIMEAGO_SECONDS": "seconds ago"
+  "TIMEAGO_SECONDS": "seconds ago",
+  "BUTTON_LOADING": "Working",
+  "BUTTON_SUCCESS": "Done"
 }

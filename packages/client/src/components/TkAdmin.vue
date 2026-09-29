@@ -38,7 +38,7 @@
             >
               <template #prepend>{{ t("ADMIN_PASSWORD") }}</template>
               <template #append>
-                <TkButton @click="onLogin">{{ t("ADMIN_LOGIN") }}</TkButton>
+                <TkButton :action="onLogin">{{ t("ADMIN_LOGIN") }}</TkButton>
               </template>
             </TkInput>
           </form>
@@ -78,10 +78,12 @@
               <template #prepend>{{ t("ADMIN_SET_PASSWORD_CONFIRM") }}</template>
             </TkInput>
           </form>
-          <TkButton class="tk-regist-button" :disabled="!canRegist" @click="onRegist">
+          <TkButton class="tk-regist-button" :disabled="!canRegist" :action="onRegist">
             {{ t("ADMIN_REGIST") }}
           </TkButton>
-          <div v-if="loginErrorMessage" class="tk-login-msg">{{ loginErrorMessage }}</div>
+          <div v-if="loginErrorMessage" class="tk-login-msg">
+            {{ loginErrorMessage }}
+          </div>
           <div v-if="!isSetCredentials" class="tk-login-msg">
             <a href="https://twikoo.js.org/faq.html" rel="noopener noreferrer" target="_blank">
               {{ t("ADMIN_CREDENTIALS_FAQ") }}
@@ -213,19 +215,25 @@ const canRegist = computed(
 );
 
 /** 登录（1.x onLogin 对齐：密码 md5 后走 LOGIN 事件） */
-async function onLogin(): Promise<void> {
+async function onLogin(): Promise<boolean> {
   if (!password.value) {
     loginErrorMessage.value = t("ADMIN_PASSWORD_REQUIRED");
-    return;
+    return false;
   }
   loading.value = true;
   loginErrorMessage.value = "";
   const passwordMd5 = md5(password.value);
   const tcb = getAppState().tcb;
   const res = await call(tcb, "LOGIN", { password: passwordMd5 });
-  const result = (res.result ?? res) as { message?: string; ticket?: string; code?: number };
+  const result = (res.result ?? res) as {
+    message?: string;
+    ticket?: string;
+    code?: number;
+  };
   if (result.message) {
     loginErrorMessage.value = result.message;
+    loading.value = false;
+    return false;
   } else if (result.ticket) {
     try {
       await tcb?.auth?.customAuthProvider().signIn(result.ticket);
@@ -234,14 +242,20 @@ async function onLogin(): Promise<void> {
       await checkAuth();
     } catch (err) {
       logger.error("登录失败", err);
+      loading.value = false;
+      return false;
     }
   } else if (result.code === 0) {
     logger.info("登录成功");
     localStorage.setItem("twikoo-access-token", passwordMd5);
     password.value = "";
     await checkAuth();
+  } else {
+    loading.value = false;
+    return false;
   }
   loading.value = false;
+  return true;
 }
 
 /**
@@ -263,7 +277,7 @@ async function onLogout(evt: Event): Promise<void> {
 }
 
 /** 首次设置密码并自动登录（1.x onRegist 对齐） */
-async function onRegist(): Promise<void> {
+async function onRegist(): Promise<boolean> {
   loading.value = true;
   const passwordMd5 = md5(password.value);
   const res = await call(getAppState().tcb, "SET_PASSWORD", {
@@ -273,13 +287,14 @@ async function onRegist(): Promise<void> {
   const result = (res.result ?? res) as { code?: number; message?: string };
   if (!result.code) {
     isSetPassword.value = true;
-    await onLogin();
+    return await onLogin();
   } else {
     loginErrorMessage.value = t("ADMIN_REGIST_FAILED");
     if (result.message) loginErrorMessage.value += `，${result.message}`;
     logger.warn("Twikoo 注册失败", res);
+    loading.value = false;
+    return false;
   }
-  loading.value = false;
 }
 
 /** 面板显示时的初始化（1.x onShow 对齐） */
@@ -315,7 +330,10 @@ async function checkAuth(): Promise<void> {
 async function checkIfPasswordSet(): Promise<void> {
   try {
     const res = await call(getAppState().tcb, "GET_PASSWORD_STATUS");
-    const result = (res.result ?? res) as { version?: string; status?: boolean };
+    const result = (res.result ?? res) as {
+      version?: string;
+      status?: boolean;
+    };
     version.value = result.version ?? "";
     isSetPassword.value = result.status === true;
     isSetCredentials.value = !getAppState().tcb;

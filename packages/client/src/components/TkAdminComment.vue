@@ -30,7 +30,7 @@
         <option value="VISIBLE">{{ t("ADMIN_COMMENT_FILTER_VISIBLE") }}</option>
         <option value="HIDDEN">{{ t("ADMIN_COMMENT_FILTER_HIDDEN") }}</option>
       </select>
-      <TkButton size="small" type="primary" @click="getComments">
+      <TkButton size="small" type="primary" :action="getComments">
         {{ t("ADMIN_COMMENT_SEARCH") }}
       </TkButton>
     </div>
@@ -71,7 +71,9 @@
           <a class="tk-admin-close" href="#" @click.prevent="securityAlert = null">
             <TkIcon name="times" />
           </a>
-          <div class="tk-admin-security-alert-message">{{ securityAlert.message }}</div>
+          <div class="tk-admin-security-alert-message">
+            {{ securityAlert.message }}
+          </div>
           <div v-if="securityAlert.url" class="tk-admin-security-alert-url">
             <code>{{ securityAlert.url }}</code>
           </div>
@@ -84,7 +86,7 @@
             v-if="comment.isSpam"
             size="mini"
             type="text"
-            @click="handleSpam(comment, false)"
+            :action="() => handleSpam(comment, false)"
           >
             {{ t("ADMIN_COMMENT_SHOW") }}
           </TkButton>
@@ -92,7 +94,7 @@
             v-if="!comment.isSpam"
             size="mini"
             type="text"
-            @click="handleSpam(comment, true)"
+            :action="() => handleSpam(comment, true)"
           >
             {{ t("ADMIN_COMMENT_HIDE") }}
           </TkButton>
@@ -100,7 +102,7 @@
             v-if="!comment.rid && comment.top"
             size="mini"
             type="text"
-            @click="handleTop(comment, false)"
+            :action="() => handleTop(comment, false)"
           >
             {{ t("ADMIN_COMMENT_UNTOP") }}
           </TkButton>
@@ -108,11 +110,11 @@
             v-if="!comment.rid && !comment.top"
             size="mini"
             type="text"
-            @click="handleTop(comment, true)"
+            :action="() => handleTop(comment, true)"
           >
             {{ t("ADMIN_COMMENT_TOP") }}
           </TkButton>
-          <TkButton size="mini" type="text" @click="handleDelete(comment)">
+          <TkButton size="mini" type="text" :action="() => handleDelete(comment)">
             {{ t("ADMIN_COMMENT_DELETE") }}
           </TkButton>
         </div>
@@ -124,6 +126,7 @@
       @page-size-change="onPageSizeChange"
       @current-change="switchPage"
     />
+    <TkConfirmDialog ref="confirmDialogRef" :message="t('ADMIN_COMMENT_DELETE_CONFIRM')" />
   </div>
 </template>
 
@@ -135,6 +138,7 @@ import TkPagination from "./TkPagination.vue";
 import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
 import TkIcon from "../components/TkIcon.vue";
+import TkConfirmDialog from "./TkConfirmDialog.vue";
 import {
   call,
   convertLink,
@@ -174,6 +178,7 @@ const initialServerVersion = getServerConfig().VERSION;
 
 /** 加载中 */
 const loading = ref(true);
+const confirmDialogRef = ref<{ open(): Promise<boolean> }>();
 /** 评论列表（当前页） */
 const comments = ref<AdminCommentDto[]>([]);
 /** 管理端配置（`GET_CONFIG_FOR_ADMIN` 下发） */
@@ -191,7 +196,11 @@ const currentPage = ref(1);
 /** 筛选条件 */
 const filter = reactive({ keyword: "", type: "" });
 /** 域名安全提示 */
-const securityAlert = ref<{ commentId: string; message: string; url?: string } | null>(null);
+const securityAlert = ref<{
+  commentId: string;
+  message: string;
+  url?: string;
+} | null>(null);
 /** 评论列表容器引用（渲染后处理目标） */
 const commentListRef = ref<HTMLElement>();
 
@@ -205,32 +214,43 @@ function displayCreated(comment: AdminCommentDto): string {
 }
 
 /** 拉取当前页评论（1.x getComments 对齐） */
-async function getComments(): Promise<void> {
+async function getComments(): Promise<boolean> {
   loading.value = true;
-  const res = await call(getAppState().tcb, "COMMENT_GET_FOR_ADMIN", {
-    per: pageSize.value,
-    page: currentPage.value,
-    keyword: filter.keyword,
-    type: filter.type,
-  });
-  const result = (res.result ?? res) as { code?: number; count?: number; data?: AdminCommentDto[] };
-  if (result && !result.code) {
-    count.value = result.count ?? 0;
-    comments.value = (result.data ?? []).map((comment) => ({
-      ...comment,
-      comment: sanitizeHtml(comment.comment),
-    }));
+  try {
+    const res = await call(getAppState().tcb, "COMMENT_GET_FOR_ADMIN", {
+      per: pageSize.value,
+      page: currentPage.value,
+      keyword: filter.keyword,
+      type: filter.type,
+    });
+    const result = (res.result ?? res) as {
+      code?: number;
+      count?: number;
+      data?: AdminCommentDto[];
+    };
+    if (result && !result.code) {
+      count.value = result.count ?? 0;
+      comments.value = (result.data ?? []).map((comment) => ({
+        ...comment,
+        comment: sanitizeHtml(comment.comment),
+      }));
+    }
+    setTimeout(() => {
+      applyRendering(commentListRef.value);
+    }, 0);
+    return !result.code;
+  } finally {
+    loading.value = false;
   }
-  setTimeout(() => {
-    applyRendering(commentListRef.value);
-  }, 0);
-  loading.value = false;
 }
 
 /** 拉取管理端配置（1.x getConfig 对齐） */
 async function getConfig(): Promise<void> {
   const res = await call(getAppState().tcb, "GET_CONFIG_FOR_ADMIN");
-  const result = (res.result ?? res) as { code?: number; config?: ServerConfig };
+  const result = (res.result ?? res) as {
+    code?: number;
+    config?: ServerConfig;
+  };
   if (result && !result.code && result.config) {
     Object.assign(serverConfig, result.config);
     serverVersion.value = typeof result.config.VERSION === "string" ? result.config.VERSION : "";
@@ -316,12 +336,17 @@ function handleView(comment: AdminCommentDto): void {
  * 删除评论（1.x handleDelete 对齐：二次确认后重载当前页）。
  * @param comment 评论
  */
-async function handleDelete(comment: AdminCommentDto): Promise<void> {
-  if (!confirm(t("ADMIN_COMMENT_DELETE_CONFIRM"))) return;
+async function handleDelete(comment: AdminCommentDto): Promise<boolean> {
+  if (!(await confirmDialogRef.value?.open())) return false;
   loading.value = true;
-  await call(getAppState().tcb, "COMMENT_DELETE_FOR_ADMIN", { id: comment._id });
-  await getComments();
-  loading.value = false;
+  try {
+    await call(getAppState().tcb, "COMMENT_DELETE_FOR_ADMIN", {
+      id: comment._id,
+    });
+    return await getComments();
+  } finally {
+    loading.value = false;
+  }
 }
 
 /**
@@ -329,8 +354,8 @@ async function handleDelete(comment: AdminCommentDto): Promise<void> {
  * @param comment 评论
  * @param isSpam 目标状态
  */
-function handleSpam(comment: AdminCommentDto, isSpam: boolean): void {
-  void setComment(comment, { isSpam });
+function handleSpam(comment: AdminCommentDto, isSpam: boolean): Promise<boolean> {
+  return setComment(comment, { isSpam });
 }
 
 /**
@@ -338,8 +363,8 @@ function handleSpam(comment: AdminCommentDto, isSpam: boolean): void {
  * @param comment 评论
  * @param top 目标状态
  */
-function handleTop(comment: AdminCommentDto, top: boolean): void {
-  void setComment(comment, { top });
+function handleTop(comment: AdminCommentDto, top: boolean): Promise<boolean> {
+  return setComment(comment, { top });
 }
 
 /**
@@ -347,11 +372,20 @@ function handleTop(comment: AdminCommentDto, top: boolean): void {
  * @param comment 评论
  * @param set 要设置的字段
  */
-async function setComment(comment: AdminCommentDto, set: Record<string, unknown>): Promise<void> {
+async function setComment(
+  comment: AdminCommentDto,
+  set: Record<string, unknown>,
+): Promise<boolean> {
   loading.value = true;
-  await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", { id: comment._id, set });
-  await getComments();
-  loading.value = false;
+  try {
+    await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", {
+      id: comment._id,
+      set,
+    });
+    return await getComments();
+  } finally {
+    loading.value = false;
+  }
 }
 
 /**
@@ -423,6 +457,7 @@ onMounted(async () => {
 }
 .twikoo .tk-admin-comment-filter-type {
   height: 32px;
+  box-sizing: border-box;
   margin: 0 0.5em;
   padding: 0 0.5em;
   color: #ffffff;
@@ -432,6 +467,12 @@ onMounted(async () => {
   position: relative;
   -moz-appearance: none;
   -webkit-appearance: none;
+}
+.twikoo .tk-admin-comment-filter .tk-button {
+  height: 32px;
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .twikoo .tk-admin-comment-filter-type:focus {
   border-color: #409eff;

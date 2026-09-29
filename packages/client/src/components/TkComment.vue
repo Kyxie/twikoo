@@ -117,7 +117,9 @@
         <span ref="commentRef" @click="popupLightbox" v-html="sanitizedComment"></span>
       </div>
       <div v-if="showContentExpand" class="tk-expand-wrap">
-        <div class="tk-expand" @click="isContentExpanded = true">{{ t("COMMENT_EXPAND") }}</div>
+        <div class="tk-expand" @click="isContentExpanded = true">
+          {{ t("COMMENT_EXPAND") }}
+        </div>
       </div>
       <div v-if="showContentCollapse" class="tk-collapse-wrap">
         <div class="tk-expand _collapse" @click="isContentExpanded = false">
@@ -169,7 +171,9 @@
         />
       </div>
       <div v-if="showExpand && !replying" class="tk-expand-wrap">
-        <div class="tk-expand" @click="isExpanded = true">{{ t("COMMENT_EXPAND") }}</div>
+        <div class="tk-expand" @click="isExpanded = true">
+          {{ t("COMMENT_EXPAND") }}
+        </div>
       </div>
       <div v-if="showCollapse && !replying" class="tk-collapse-wrap">
         <div class="tk-expand _collapse" @click="isExpanded = false">
@@ -177,6 +181,7 @@
         </div>
       </div>
     </div>
+    <TkConfirmDialog ref="confirmDialogRef" :message="t('COMMENT_DELETE_CONFIRM')" />
   </div>
 </template>
 
@@ -186,6 +191,7 @@ import TkAction from "./TkAction.vue";
 import TkAvatar from "./TkAvatar.vue";
 import TkSubmit from "./TkSubmit.vue";
 import TkIcon from "../components/TkIcon.vue";
+import TkConfirmDialog from "./TkConfirmDialog.vue";
 import {
   call,
   convertLink,
@@ -196,7 +202,7 @@ import {
   t,
   timeago,
 } from "../utils";
-import { getAppState, type TwikooError } from "../utils/api";
+import { getAppState, TwikooError } from "../utils/api";
 import { getServerConfig } from "../utils/state";
 import { EMPTY_CONFIG } from "./defaults";
 import type { CommentDto, ServerConfig } from "../types";
@@ -224,6 +230,7 @@ const emit = defineEmits<{
   (e: "refreshed"): void;
   (e: "error", error: TwikooError): void;
 }>();
+const confirmDialogRef = ref<{ open(): Promise<boolean> }>();
 
 /** 操作系统图标表（1.x 同表） */
 const osList: Record<string, string> = {
@@ -377,7 +384,10 @@ async function onLike(): Promise<void> {
   if (likeLoading.value) return;
   likeLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_LIKE", { id: props.comment.id, type: "up" });
+    await call(getAppState().tcb, "COMMENT_LIKE", {
+      id: props.comment.id,
+      type: "up",
+    });
     if (liked.value) {
       ups.value--;
     } else {
@@ -396,7 +406,10 @@ async function onDislike(): Promise<void> {
   if (likeLoading.value) return;
   likeLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_LIKE", { id: props.comment.id, type: "down" });
+    await call(getAppState().tcb, "COMMENT_LIKE", {
+      id: props.comment.id,
+      type: "down",
+    });
     if (disliked.value) {
       downs.value--;
     } else {
@@ -421,10 +434,13 @@ function onReply(id: string): void {
 
 /** 删除自己的评论（1.x onDelete 对齐：二次确认 + COMMENT_DELETE_FOR_USER） */
 async function onDelete(): Promise<void> {
-  if (!confirm(t("COMMENT_DELETE_CONFIRM"))) return;
-  const res = await call(getAppState().tcb, "COMMENT_DELETE_FOR_USER", { id: props.comment.id });
+  if (!(await confirmDialogRef.value?.open())) return;
+  const res = await call(getAppState().tcb, "COMMENT_DELETE_FOR_USER", {
+    id: props.comment.id,
+  });
   const payload = (res.result ?? res) as { code?: number; message?: string };
-  if (payload.code) alert(payload.message);
+  if (payload.code)
+    emit("error", new TwikooError("REJECTED", payload.message ?? t("COMMENT_FAILED")));
   else emit("load");
 }
 
@@ -514,7 +530,10 @@ function popupLightbox(event: MouseEvent): void {
 async function setComment(set: { isSpam?: boolean; top?: boolean }): Promise<void> {
   adminLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", { id: props.comment.id, set });
+    await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", {
+      id: props.comment.id,
+      set,
+    });
     if (set.isSpam !== undefined) localSpam.value = set.isSpam;
     if (set.top !== undefined) localTop.value = set.top;
   } finally {

@@ -209,5 +209,7 @@
   "TIMEAGO_HOURS": "小时前",
   "TIMEAGO_MINUTES": "分钟前",
   "TIMEAGO_NOW": "刚刚",
-  "TIMEAGO_SECONDS": "秒前"
+  "TIMEAGO_SECONDS": "秒前",
+  "BUTTON_LOADING": "处理中",
+  "BUTTON_SUCCESS": "已完成"
 }

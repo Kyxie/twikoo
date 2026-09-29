@@ -62,7 +62,9 @@
             <!-- 预览内容经 sanitizeHtml 消毒 -->
             <!-- eslint-disable-next-line vue/no-v-html -->
             <div ref="previewRef" v-html="commentHtml"></div>
-            <p v-if="!comment.trim()" class="tk-preview-empty">{{ t("SUBMIT_PREVIEW_EMPTY") }}</p>
+            <p v-if="!comment.trim()" class="tk-preview-empty">
+              {{ t("SUBMIT_PREVIEW_EMPTY") }}
+            </p>
           </div>
         </div>
       </div>
@@ -104,7 +106,7 @@
       <TkButton v-if="!!replyId" class="tk-cancel" size="small" @click="cancel">
         {{ t("SUBMIT_CANCEL") }}
       </TkButton>
-      <TkButton class="tk-send" type="primary" size="small" :disabled="!canSend" @click="send">
+      <TkButton class="tk-send" type="primary" size="small" :disabled="!canSend" :action="send">
         {{ isSending ? t("SUBMIT_SENDING") : t("SUBMIT_SEND") }}
       </TkButton>
       <div
@@ -487,7 +489,11 @@ function getGeeTestToken(): Promise<GeeTestResult> {
     void geetestLoad.value?.then(() => {
       const initGeetest4 = (window as unknown as { initGeetest4: InitGeetest4 }).initGeetest4;
       initGeetest4(
-        { captchaId: props.config.GEETEST_CAPTCHA_ID, product: "bind", language: "zho" },
+        {
+          captchaId: props.config.GEETEST_CAPTCHA_ID,
+          product: "bind",
+          language: "zho",
+        },
         (captcha) => {
           captcha
             .onReady(() => captcha.showCaptcha())
@@ -533,7 +539,9 @@ function initCap(): void {
             expires?: number;
           };
           if (result.code && result.code !== 0) {
-            return capResponse(false, { error: result.message ?? "challenge_failed" });
+            return capResponse(false, {
+              error: result.message ?? "challenge_failed",
+            });
           }
           return capResponse(true, {
             challenge: result.challenge,
@@ -567,7 +575,9 @@ function initCap(): void {
         }
         return capResponse(false, { error: "unknown_cap_path" });
       } catch (e) {
-        return capResponse(false, { error: e instanceof Error ? e.message : "cap_fetch_failed" });
+        return capResponse(false, {
+          error: e instanceof Error ? e.message : "cap_fetch_failed",
+        });
       }
     };
   }
@@ -678,7 +688,7 @@ function updatePreview(): void {
 /**
  * 发送评论（1.x send 对齐：校验 → 人机验证 → COMMENT_SUBMIT → 清草稿）。
  */
-async function send(): Promise<void> {
+async function send(): Promise<boolean> {
   isSending.value = true;
   error.value = undefined;
   try {
@@ -712,12 +722,17 @@ async function send(): Promise<void> {
     const onSubmit = getAppState().options.onSubmit;
     if (typeof onSubmit === "function") await onSubmit(payload);
     const res = await call(getAppState().tcb, "COMMENT_SUBMIT", payload);
-    const result = (res.result ?? res) as { id?: string; code?: number; message?: string };
+    const result = (res.result ?? res) as {
+      id?: string;
+      code?: number;
+      message?: string;
+    };
     if (result.id) {
       comment.value = "";
       error.value = undefined;
       emit("load");
       saveDraft();
+      return true;
     } else {
       throw new TwikooError(
         result.code !== undefined ? "REJECTED" : "UNKNOWN",
@@ -733,6 +748,7 @@ async function send(): Promise<void> {
         : new TwikooError("UNKNOWN", `${t("COMMENT_FAILED")}: ${(e as Error).message}`, {
             rawMessage: (e as Error).message,
           });
+    return false;
   } finally {
     isSending.value = false;
   }
@@ -863,7 +879,9 @@ async function uploadPhotoToQcloud(
       filePath: photo,
     });
     if (!uploadResult.fileID) return;
-    const tempUrlResult = await app.getTempFileURL({ fileList: [uploadResult.fileID] });
+    const tempUrlResult = await app.getTempFileURL({
+      fileList: [uploadResult.fileID],
+    });
     uploadCompleted(fileIndex, fileName, fileType, tempUrlResult.fileList[0].tempFileURL);
   } catch (e) {
     console.error(e);

@@ -80,7 +80,7 @@
           @clear="clearSearch"
           @keyup.enter="search"
         />
-        <TkButton size="small" type="primary" @click="search">
+        <TkButton size="small" type="primary" :action="search">
           {{ t("COMMENTS_SEARCH") }}
         </TkButton>
       </div>
@@ -215,13 +215,14 @@ function resetComments(): void {
 }
 
 /** 执行搜索（1.x search 对齐） */
-function search(): void {
+async function search(): Promise<boolean> {
   const keyword = searchInput.value.trim();
   searchInput.value = keyword;
-  if (searchKeyword.value === keyword) return;
+  if (searchKeyword.value === keyword) return false;
   searchKeyword.value = keyword;
   resetComments();
-  void initComments();
+  await initComments();
+  return !error.value;
 }
 
 /** 清空搜索（1.x clearSearch 对齐） */
@@ -317,11 +318,21 @@ function getOldestCreated(): number | undefined {
  */
 async function loadNextPage(url: string, page = loadedPages.value): Promise<boolean> {
   if (searchKeyword.value) {
-    return getComments({ url, page, sort: currentSort.value, keyword: searchKeyword.value });
+    return getComments({
+      url,
+      page,
+      sort: currentSort.value,
+      keyword: searchKeyword.value,
+    });
   }
   const before = getOldestCreated();
   if (before === undefined) return false;
-  return getComments({ url, before, sort: currentSort.value, keyword: searchKeyword.value });
+  return getComments({
+    url,
+    before,
+    sort: currentSort.value,
+    keyword: searchKeyword.value,
+  });
 }
 
 /** 列表渲染完成后回调使用方钩子（1.x onCommentLoaded 对齐） */

@@ -8,13 +8,13 @@
     <div class="tk-admin-warn tk-admin-import-warn">
       <p>{{ t("ADMIN_EXPORT_WARN") }}</p>
     </div>
-    <TkButton size="small" :disabled="loading" @click="doExport('comment')">
+    <TkButton size="small" :disabled="loading" :action="() => doExport('comment')">
       {{ t("ADMIN_EXPORT_COMMENT") }}
     </TkButton>
-    <TkButton size="small" :disabled="loading" @click="doExport('counter')">
+    <TkButton size="small" :disabled="loading" :action="() => doExport('counter')">
       {{ t("ADMIN_EXPORT_COUNTER") }}
     </TkButton>
-    <TkButton size="small" :disabled="loading" @click="exportConfig">
+    <TkButton size="small" :disabled="loading" :action="exportConfig">
       {{ t("ADMIN_CONFIG_EXPORT") }}
     </TkButton>
   </div>
@@ -33,12 +33,16 @@ const loading = ref(false);
  * 导出指定集合（评论 / 访问量）。
  * @param collection 集合名
  */
-async function doExport(collection: string): Promise<void> {
+async function doExport(collection: string): Promise<boolean> {
   loading.value = true;
   try {
-    const res = await call(getAppState().tcb, "COMMENT_EXPORT_FOR_ADMIN", { collection });
+    const res = await call(getAppState().tcb, "COMMENT_EXPORT_FOR_ADMIN", {
+      collection,
+    });
     const result = (res.result ?? res) as { data?: unknown };
-    if (result.data) downloadJson(`twikoo-${collection}.json`, result.data);
+    if (!result.data) return false;
+    downloadJson(`twikoo-${collection}.json`, result.data);
+    return true;
   } finally {
     loading.value = false;
   }
@@ -50,15 +54,16 @@ async function doExport(collection: string): Promise<void> {
  * 服务端已摘除 CREDENTIALS；VERSION 是服务端回填的展示字段，导出前去掉，
  * 否则回灌时会被当作配置项写进库。
  */
-async function exportConfig(): Promise<void> {
+async function exportConfig(): Promise<boolean> {
   loading.value = true;
   try {
     const res = await call(getAppState().tcb, "GET_CONFIG_FOR_ADMIN", {});
     const result = (res.result ?? res) as { config?: Record<string, unknown> };
-    if (!result.config) return;
+    if (!result.config) return false;
     const config = { ...result.config };
     delete config.VERSION;
     downloadJson(`twikoo-config-${new Date().toISOString().slice(0, 10)}.json`, config);
+    return true;
   } finally {
     loading.value = false;
   }

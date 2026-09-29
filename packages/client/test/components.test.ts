@@ -151,6 +151,21 @@ describe("TkSubmit", () => {
     expect(wrapper.find(".tk-send").attributes("disabled")).toBeUndefined();
   });
 
+  it("enables send as soon as the last required meta field is typed, without blur", async () => {
+    useFakeTcb();
+    const wrapper = mount(TkSubmit, { props: { config: {} } });
+    await flushPromises();
+    const mail = wrapper.find('input[name="mail"]');
+    (mail.element as HTMLInputElement).value = "user@example.com";
+    await mail.trigger("input");
+    await wrapper.find("textarea").setValue("测试内容");
+    expect(wrapper.find(".tk-send").attributes("disabled")).toBeDefined();
+    const nick = wrapper.find('input[name="nick"]');
+    (nick.element as HTMLInputElement).value = "Kyxie";
+    await nick.trigger("input");
+    expect(wrapper.find(".tk-send").attributes("disabled")).toBeUndefined();
+  });
+
   it("预览：marked 渲染 + 消毒", async () => {
     useFakeTcb();
     const wrapper = mount(TkSubmit, { attachTo: document.body, props: { config: {} } });
@@ -573,7 +588,6 @@ describe("TkAdminComment 管理操作（#1140 回归）", () => {
   }
 
   it("删除/隐藏/置顶上报的 id 取自文档 _id（不是 id）", async () => {
-    vi.stubGlobal("confirm", () => true);
     const { wrapper, calls } = await mountAdminComment();
 
     /**
@@ -588,6 +602,10 @@ describe("TkAdminComment 管理操作（#1140 回归）", () => {
     };
 
     await findByText(t("ADMIN_COMMENT_DELETE")).trigger("click");
+    await flushPromises();
+    const dialog = wrapper.find("dialog");
+    expect(dialog.element.open).toBe(true);
+    await dialog.findAll("button").find((button) => button.text() === t("ADMIN_COMMENT_DELETE"))?.trigger("click");
     await flushPromises();
     expect(calls.find((c) => c.event === "COMMENT_DELETE_FOR_ADMIN")?.data.id).toBe("c1");
 
