@@ -72,14 +72,11 @@
             <div class="tk-admin-config-email-test-desc">
               {{ t("ADMIN_CONFIG_EMAIL_TEST_HELP") }}
             </div>
-            <div class="tk-admin-config-input">
-              <TkInput v-model="emailTestAddress" size="small">
-                <template #append>
-                  <TkButton type="info" :action="testEmail">
-                    {{ t("ADMIN_CONFIG_EMAIL_TEST_BTN") }}
-                  </TkButton>
-                </template>
-              </TkInput>
+            <div class="tk-admin-config-input tk-admin-config-email-test-controls">
+              <TkInput v-model="emailTestAddress" size="small" />
+              <TkButton type="info" :action="testEmail">
+                {{ t("ADMIN_CONFIG_EMAIL_TEST_BTN") }}
+              </TkButton>
             </div>
             <div class="tk-admin-config-email-test-desc">
               {{ t("ADMIN_CONFIG_EMAIL_TEST_RESULT") }}{{ emailTestResult }}
@@ -932,5 +929,17 @@ onUnmounted(() => {
 }
 .twikoo .tk-admin-config-email-test-desc {
   margin: 1em 0;
+}
+.twikoo .tk-admin-config-email-test-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5em;
+}
+.twikoo .tk-admin-config-email-test-controls .tk-input {
+  flex: 1;
+  min-width: 0;
+}
+.twikoo .tk-admin-config-email-test-controls .tk-button {
+  flex: none;
 }
 </style>
