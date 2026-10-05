@@ -24,7 +24,35 @@
       <option value="twikoo">Twikoo (JSON)</option>
     </select>
     <div class="tk-admin-import-label">{{ t("ADMIN_IMPORT_SELECT_FILE") }}</div>
-    <input ref="inputFileRef" type="file" value="" />
+    <input
+      ref="inputFileRef"
+      class="tk-import-file-native"
+      type="file"
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onFileChange"
+    />
+    <button
+      type="button"
+      class="tk-import-dropzone"
+      :class="{
+        'tk-import-dropzone-dragging': isDragging,
+        'tk-import-dropzone-has-file': selectedFile,
+      }"
+      :aria-label="t('ADMIN_IMPORT_SELECT_FILE')"
+      @click="openFilePicker"
+      @dragover.prevent="isDragging = true"
+      @dragleave="onDragLeave"
+      @drop.prevent="onDrop"
+    >
+      <span class="tk-import-dropzone-prompt">
+        {{
+          selectedFile
+            ? `${t("ADMIN_IMPORT_FILE_SELECTED")}${selectedFile.name}`
+            : t("ADMIN_IMPORT_DROPZONE_PROMPT")
+        }}
+      </span>
+    </button>
     <div class="tk-admin-import-actions">
       <TkButton size="small" :disabled="loading" :action="uploadFile">
         {{ t("ADMIN_IMPORT_COMMENT") }}
@@ -68,10 +96,42 @@ const warnText = reactive<Record<string, string>>({
 });
 /** 文件选择框引用 */
 const inputFileRef = ref<HTMLInputElement>();
+/** 当前选择或拖入的文件 */
+const selectedFile = ref<File | null>(null);
+/** 文件拖入提示状态 */
+const isDragging = ref(false);
 /** 日志输入框引用（滚动到底用） */
 const logTextAreaRef = ref<{
   inputEl?: HTMLInputElement | HTMLTextAreaElement;
 }>();
+
+/** 打开系统文件选择器。 */
+function openFilePicker(): void {
+  inputFileRef.value?.click();
+}
+
+/** 同步系统文件选择器选中的文件。 */
+function onFileChange(event: Event): void {
+  selectedFile.value = (event.target as HTMLInputElement).files?.[0] ?? null;
+}
+
+/** 光标离开整个上传区时结束拖入提示。 */
+function onDragLeave(event: DragEvent): void {
+  if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
+    isDragging.value = false;
+  }
+}
+
+/** 接收拖入的第一个文件。 */
+function onDrop(event: DragEvent): void {
+  isDragging.value = false;
+  selectedFile.value = event.dataTransfer?.files?.[0] ?? selectedFile.value;
+}
+
+/** 供评论及配置导入共用的当前文件。 */
+function getSelectedFile(): File | undefined {
+  return selectedFile.value ?? inputFileRef.value?.files?.[0];
+}
 
 /**
  * 追加一行日志并滚动到底（1.x log 对齐）。
@@ -93,7 +153,7 @@ async function uploadFile(): Promise<boolean> {
     log(t("ADMIN_IMPORT_SOURCE_REQUIRED"));
     return false;
   }
-  const filePath = inputFileRef.value?.files?.[0];
+  const filePath = getSelectedFile();
   if (!filePath) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
     return false;
@@ -192,7 +252,7 @@ async function importConfig(): Promise<boolean> {
     log(t("ADMIN_CONFIG_IMPORT_SOURCE_INVALID"));
     return false;
   }
-  const file = inputFileRef.value?.files?.[0];
+  const file = getSelectedFile();
   if (!file) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
     return false;
@@ -240,6 +300,38 @@ async function importConfig(): Promise<boolean> {
   margin-top: 1em;
   font-size: 1.25rem;
   font-weight: bold;
+}
+.twikoo .tk-import-file-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.twikoo .tk-import-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100px;
+  padding: 1rem;
+  border: 1px dashed rgba(144, 147, 153, 0.5);
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.twikoo .tk-import-dropzone:is(:hover, :focus-visible),
+.twikoo .tk-import-dropzone-dragging {
+  border-color: currentColor;
+  background: rgba(144, 147, 153, 0.08);
+}
+.twikoo .tk-import-dropzone-prompt {
+  overflow-wrap: anywhere;
 }
 .twikoo .tk-admin-import select,
 .twikoo .tk-admin-import input,

@@ -605,7 +605,10 @@ describe("TkAdminComment 管理操作（#1140 回归）", () => {
     await flushPromises();
     const dialog = wrapper.find("dialog");
     expect(dialog.element.open).toBe(true);
-    await dialog.findAll("button").find((button) => button.text() === t("ADMIN_COMMENT_DELETE"))?.trigger("click");
+    await dialog
+      .findAll("button")
+      .find((button) => button.text() === t("ADMIN_COMMENT_DELETE"))
+      ?.trigger("click");
     await flushPromises();
     expect(calls.find((c) => c.event === "COMMENT_DELETE_FOR_ADMIN")?.data.id).toBe("c1");
 
@@ -711,6 +714,25 @@ describe("配置导出 / 导入（复用 GET_CONFIG_FOR_ADMIN + SET_CONFIG，不
     await wrapper.find("select").setValue(source);
     return wrapper;
   }
+
+  it("导入区点击可打开文件选择，拖入文件会显示文件名并供配置导入使用", async () => {
+    const calls = useRecordingTcb();
+    const wrapper = await mountImport();
+    const input = wrapper.find('input[type="file"]').element as HTMLInputElement;
+    const openPicker = vi.spyOn(input, "click").mockImplementation(() => undefined);
+    const zone = wrapper.find(".tk-import-dropzone");
+    await zone.trigger("click");
+    expect(openPicker).toHaveBeenCalledOnce();
+
+    const file = new File(['{"SITE_NAME":"新站名"}'], "config.json", {
+      type: "application/json",
+    });
+    await zone.trigger("drop", { dataTransfer: { files: [file] } });
+    expect(zone.text()).toContain("config.json");
+    await findButton(wrapper, t("ADMIN_CONFIG_IMPORT")).trigger("click");
+    await vi.waitFor(() => expect(calls.map((call) => call.event)).toEqual(["SET_CONFIG"]));
+    wrapper.unmount();
+  });
 
   it("导出配置：只调用 GET_CONFIG_FOR_ADMIN，且导出内容去掉 VERSION", async () => {
     const calls = useRecordingTcb({
