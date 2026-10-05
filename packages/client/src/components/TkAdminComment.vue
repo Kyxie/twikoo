@@ -25,11 +25,12 @@
         :placeholder="t('ADMIN_COMMENT_SEARCH_PLACEHOLDER')"
         @keyup.enter="getComments"
       />
-      <select v-model="filter.type" class="tk-admin-comment-filter-type">
-        <option value="">{{ t("ADMIN_COMMENT_FILTER_ALL") }}</option>
-        <option value="VISIBLE">{{ t("ADMIN_COMMENT_FILTER_VISIBLE") }}</option>
-        <option value="HIDDEN">{{ t("ADMIN_COMMENT_FILTER_HIDDEN") }}</option>
-      </select>
+      <TkSelect
+        v-model="filter.type"
+        class="tk-admin-comment-filter-type"
+        :label="t('ADMIN_COMMENT_SEARCH')"
+        :options="filterOptions"
+      />
       <TkButton size="small" type="primary" :action="getComments">
         {{ t("ADMIN_COMMENT_SEARCH") }}
       </TkButton>
@@ -137,6 +138,7 @@ import TkAvatar from "./TkAvatar.vue";
 import TkPagination from "./TkPagination.vue";
 import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
+import TkSelect from "../components/TkSelect.vue";
 import TkIcon from "../components/TkIcon.vue";
 import TkConfirmDialog from "./TkConfirmDialog.vue";
 import {
@@ -195,6 +197,12 @@ const pageSize = ref(defaultPageSize);
 const currentPage = ref(1);
 /** 筛选条件 */
 const filter = reactive({ keyword: "", type: "" });
+/** 评论可见性筛选项。 */
+const filterOptions = [
+  { value: "", label: t("ADMIN_COMMENT_FILTER_ALL") },
+  { value: "VISIBLE", label: t("ADMIN_COMMENT_FILTER_VISIBLE") },
+  { value: "HIDDEN", label: t("ADMIN_COMMENT_FILTER_HIDDEN") },
+];
 /** 域名安全提示 */
 const securityAlert = ref<{
   commentId: string;
@@ -456,29 +464,15 @@ onMounted(async () => {
   flex: 1;
 }
 .twikoo .tk-admin-comment-filter-type {
-  height: 32px;
-  box-sizing: border-box;
+  width: 8em;
+  flex: none;
   margin: 0 0.5em;
-  padding: 0 0.5em;
-  color: #ffffff;
-  background-color: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(144, 147, 153, 0.31);
-  border-radius: 4px;
-  position: relative;
-  -moz-appearance: none;
-  -webkit-appearance: none;
 }
 .twikoo .tk-admin-comment-filter .tk-button {
   height: 32px;
   box-sizing: border-box;
   padding-top: 0;
   padding-bottom: 0;
-}
-.twikoo .tk-admin-comment-filter-type:focus {
-  border-color: #409eff;
-}
-.twikoo .tk-admin-comment-filter-type option {
-  color: initial;
 }
 .twikoo .tk-admin-comment-list {
   margin-top: 1em;

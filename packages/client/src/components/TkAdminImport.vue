@@ -15,14 +15,7 @@
     <div class="tk-admin-import-label">
       {{ t("ADMIN_IMPORT_SELECT_SOURCE") }}
     </div>
-    <select v-model="source">
-      <option disabled value="">{{ t("ADMIN_IMPORT_SELECT") }}</option>
-      <option value="valine">Valine (JSON)</option>
-      <option value="disqus">Disqus (XML)</option>
-      <option value="artalk">Artalk v1 (JSON)</option>
-      <option value="artalk2">Artalk v2 (Artrans)</option>
-      <option value="twikoo">Twikoo (JSON)</option>
-    </select>
+    <TkSelect v-model="source" :label="t('ADMIN_IMPORT_SELECT_SOURCE')" :options="sourceOptions" />
     <div class="tk-admin-import-label">{{ t("ADMIN_IMPORT_SELECT_FILE") }}</div>
     <input
       ref="inputFileRef"
@@ -75,6 +68,7 @@
 import { nextTick, reactive, ref } from "vue";
 import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
+import TkSelect from "../components/TkSelect.vue";
 import { call, readAsText, t } from "../utils";
 import { getAppState } from "../utils/api";
 import { EVENT_CONFIG_UPDATED, emit as busEmit } from "../utils/bus";
@@ -83,6 +77,15 @@ import { EVENT_CONFIG_UPDATED, emit as busEmit } from "../utils/bus";
 const loading = ref(false);
 /** 导入来源 */
 const source = ref("");
+/** 可导入的来源系统。 */
+const sourceOptions = [
+  { value: "", label: t("ADMIN_IMPORT_SELECT"), disabled: true },
+  { value: "valine", label: "Valine (JSON)" },
+  { value: "disqus", label: "Disqus (XML)" },
+  { value: "artalk", label: "Artalk v1 (JSON)" },
+  { value: "artalk2", label: "Artalk v2 (Artrans)" },
+  { value: "twikoo", label: "Twikoo (JSON)" },
+];
 /** 日志文本 */
 const logText = ref("");
 /** 各来源的提示文案（1.x warnText 同表） */
@@ -327,7 +330,7 @@ async function importConfig(): Promise<boolean> {
 .twikoo .tk-import-dropzone-prompt {
   overflow-wrap: anywhere;
 }
-.twikoo .tk-admin-import select,
+.twikoo .tk-admin-import .tk-select,
 .twikoo .tk-admin-import input,
 .twikoo .tk-admin-import .tk-button,
 .twikoo .tk-admin-import .tk-input {
@@ -338,16 +341,5 @@ async function importConfig(): Promise<boolean> {
 }
 .twikoo .tk-admin-import-actions .tk-button {
   flex: 1;
-}
-.twikoo .tk-admin-import select {
-  height: 32px;
-  padding: 0 0.5em;
-  color: #ffffff;
-  background-color: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(144, 147, 153, 0.31);
-  border-radius: 4px;
-}
-.twikoo .tk-admin-import select option {
-  color: initial;
 }
 </style>

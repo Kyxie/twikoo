@@ -712,7 +712,9 @@ describe("配置导出 / 导入（复用 GET_CONFIG_FOR_ADMIN + SET_CONFIG，不
    */
   async function mountImport(source = "twikoo") {
     const wrapper = mount(TkAdminImport);
-    await wrapper.find("select").setValue(source);
+    await wrapper.find(".tk-select-trigger").trigger("click");
+    const optionIndex = ["", "valine", "disqus", "artalk", "artalk2", "twikoo"].indexOf(source);
+    await wrapper.findAll('[role="option"]')[optionIndex].trigger("click");
     return wrapper;
   }
 

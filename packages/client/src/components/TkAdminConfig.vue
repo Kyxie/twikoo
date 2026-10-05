@@ -37,11 +37,13 @@
               {{ setting.key }}
             </div>
             <div class="tk-admin-config-input">
-              <select v-if="setting.options" v-model="setting.value" class="tk-admin-config-select">
-                <option v-for="opt in setting.options" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+              <TkSelect
+                v-if="setting.options"
+                v-model="setting.value"
+                class="tk-admin-config-select"
+                :label="setting.key"
+                :options="setting.options"
+              />
               <TkInput
                 v-else-if="setting.type === 'textarea'"
                 v-model="setting.value"
@@ -103,6 +105,7 @@ import { onMounted, onUnmounted, reactive, ref } from "vue";
 import { VERSION } from "@twikoojs/shared";
 import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
+import TkSelect from "../components/TkSelect.vue";
 import { call, logger, t } from "../utils";
 import { getAppState } from "../utils/api";
 import { EVENT_CONFIG_UPDATED, emit as busEmit, off as busOff, on as busOn } from "../utils/bus";
@@ -911,35 +914,6 @@ onUnmounted(() => {
 }
 .twikoo .tk-admin-config-input {
   position: relative;
-}
-.twikoo .tk-admin-config-select {
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  background: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 8.825L1.175 4 2.238 2.938 6 6.7l3.763-3.762L10.825 4z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  border-radius: 4px;
-  border: 1px solid rgba(144, 147, 153, 0.31);
-  box-sizing: border-box;
-  color: #ffffff;
-  cursor: pointer;
-  display: inline-block;
-  font-size: inherit;
-  height: 32px;
-  line-height: 32px;
-  outline: none;
-  padding: 0 30px 0 10px;
-  transition: border-color 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
-  width: 100%;
-}
-.twikoo .tk-admin-config-select:focus {
-  border-color: rgba(255, 255, 255, 0.6);
-}
-.twikoo .tk-admin-config-select option {
-  color: #fff;
-  background: #333;
 }
 .twikoo .tk-admin-config-desc {
   margin-top: 0.5em;
