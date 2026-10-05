@@ -39,7 +39,6 @@
         'tk-import-dropzone-dragging': isDragging,
         'tk-import-dropzone-has-file': selectedFile,
       }"
-      :aria-label="t('ADMIN_IMPORT_SELECT_FILE')"
       @click="openFilePicker"
       @dragover.prevent="isDragging = true"
       @dragleave="onDragLeave"
@@ -128,11 +127,6 @@ function onDrop(event: DragEvent): void {
   selectedFile.value = event.dataTransfer?.files?.[0] ?? selectedFile.value;
 }
 
-/** 供评论及配置导入共用的当前文件。 */
-function getSelectedFile(): File | undefined {
-  return selectedFile.value ?? inputFileRef.value?.files?.[0];
-}
-
 /**
  * 追加一行日志并滚动到底（1.x log 对齐）。
  * @param message 日志内容
@@ -153,7 +147,7 @@ async function uploadFile(): Promise<boolean> {
     log(t("ADMIN_IMPORT_SOURCE_REQUIRED"));
     return false;
   }
-  const filePath = getSelectedFile();
+  const filePath = selectedFile.value;
   if (!filePath) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
     return false;
@@ -252,7 +246,7 @@ async function importConfig(): Promise<boolean> {
     log(t("ADMIN_CONFIG_IMPORT_SOURCE_INVALID"));
     return false;
   }
-  const file = getSelectedFile();
+  const file = selectedFile.value;
   if (!file) {
     log(t("ADMIN_IMPORT_FILE_REQUIRED"));
     return false;

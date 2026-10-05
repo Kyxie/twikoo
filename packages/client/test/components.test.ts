@@ -690,6 +690,7 @@ describe("配置导出 / 导入（复用 GET_CONFIG_FOR_ADMIN + SET_CONFIG，不
       value: [new File([content], "config.json", { type: "application/json" })],
       writable: true,
     });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   /**
