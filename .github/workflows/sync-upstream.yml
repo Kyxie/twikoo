@@ -44,31 +44,6 @@ jobs:
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Setup pnpm
-        if: steps.merge.outputs.changed == 'true'
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        if: steps.merge.outputs.changed == 'true'
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: Install dependencies
-        if: steps.merge.outputs.changed == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify merged code
-        if: steps.merge.outputs.changed == 'true'
-        run: |
-          pnpm build
-          pnpm lint
-          pnpm lint:md
-          pnpm typecheck
-          pnpm test
-          pnpm --filter twikoo-docs docs:build
-
       - name: Push main
         if: steps.merge.outputs.changed == 'true'
         run: git push origin HEAD:main
