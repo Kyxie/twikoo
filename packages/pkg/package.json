@@ -17,7 +17,7 @@
     "akismet-api": "^6.0.0",
     "bowser": "^2.14.1",
     "commander": "15.0.0",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.16",
     "form-data": "^4.0.6",
     "html-to-text": "^10.0.1",
     "jsdom": "~25.0.1",
@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@tsdown/exe": "0.23.0",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.4",
     "tsdown": "0.23.0"
   }
 }
