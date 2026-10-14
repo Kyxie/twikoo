@@ -729,6 +729,8 @@ async function send(): Promise<boolean> {
     };
     if (result.id) {
       comment.value = "";
+      isPreviewing.value = false;
+      commentHtml.value = "";
       error.value = undefined;
       emit("load");
       saveDraft();
