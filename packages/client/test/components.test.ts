@@ -6,7 +6,7 @@
  *
  * 数据通道以替身 tcb（`app.callFunction`）驱动，避免依赖真实后端。
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import TkSubmit from "../src/components/TkSubmit.vue";
 import TkComments from "../src/components/TkComments.vue";
@@ -20,9 +20,11 @@ import TkError from "../src/components/TkError.vue";
 import TkAdminComment from "../src/components/TkAdminComment.vue";
 import TkAdminExport from "../src/components/TkAdminExport.vue";
 import TkAdminImport from "../src/components/TkAdminImport.vue";
+import TkAdminConfig from "../src/components/TkAdminConfig.vue";
+import TkAdmin from "../src/components/TkAdmin.vue";
 import TwikooApp from "../src/App.vue";
 import { VERSION } from "@twikoojs/shared";
-import { TwikooError, setAppState } from "../src/utils/api";
+import { TwikooError, setAppState, getAppState } from "../src/utils/api";
 import { t } from "../src/utils";
 import { clearAll } from "../src/utils/bus";
 import { setServerConfig } from "../src/utils/state";
@@ -47,6 +49,23 @@ function makeComment(overrides: Partial<CommentDto> = {}): CommentDto {
     replies: [],
     ...overrides,
   } as CommentDto;
+}
+
+/** 确认或取消自定义删除弹窗，并核对当前操作的提示文案。 */
+async function closeDeleteDialog(
+  wrapper: ReturnType<typeof mount>,
+  message: string,
+  accept: boolean,
+): Promise<void> {
+  const dialog = wrapper.find("dialog");
+  expect(dialog.element.open).toBe(true);
+  expect(dialog.find(".tk-confirm-dialog__message").text()).toBe(message);
+  const label = accept ? t("ADMIN_COMMENT_DELETE") : t("SUBMIT_CANCEL");
+  await dialog
+    .findAll("button")
+    .find((button) => button.text() === label)!
+    .trigger("click");
+  await flushPromises();
 }
 
 /**
@@ -135,6 +154,36 @@ describe("TkMetaInput", () => {
 });
 
 describe("TkSubmit", () => {
+  it("输入时实时校验、保存资料并更新头像", async () => {
+    useFakeTcb();
+    const saved = { nick: "原昵称", mail: "old@example.com", link: "" };
+    localStorage.setItem("twikoo", JSON.stringify(saved));
+    const wrapper = mount(TkSubmit, { props: { config: {} } });
+    await flushPromises();
+    await wrapper.find("textarea").setValue("测试内容");
+    const avatar = wrapper.find(".tk-avatar img").attributes("src");
+    const nickInput = wrapper.find('input[name="nick"]');
+    const mailInput = wrapper.find('input[name="mail"]');
+
+    (mailInput.element as HTMLInputElement).value = "";
+    await mailInput.trigger("input");
+    expect(wrapper.find(".tk-send").attributes("disabled")).toBeDefined();
+    (mailInput.element as HTMLInputElement).value = "new@example.com";
+    await mailInput.trigger("input");
+    (nickInput.element as HTMLInputElement).value = "新昵称";
+    await nickInput.trigger("input");
+    expect(wrapper.find(".tk-send").attributes("disabled")).toBeUndefined();
+    expect(JSON.parse(localStorage.getItem("twikoo") ?? "{}")).toEqual({
+      nick: "新昵称",
+      mail: "new@example.com",
+      link: "",
+    });
+    expect(wrapper.find(".tk-avatar img").attributes("src")).not.toBe(avatar);
+
+    await mailInput.trigger("change");
+    wrapper.unmount();
+  });
+
   it("meta 未就绪时发送按钮禁用，填写齐备后可用", async () => {
     useFakeTcb();
     const wrapper = mount(TkSubmit, { props: { config: {} } });
@@ -384,6 +433,108 @@ describe("TkFooter", () => {
 });
 
 describe("TkComment", () => {
+  const originalAlert = window.alert;
+  const originalConfirm = window.confirm;
+  afterEach(() => {
+    window.alert = originalAlert;
+    window.confirm = originalConfirm;
+  });
+
+  it.each([
+    ["isSpam", "ADMIN_COMMENT_HIDE", ".tk-tag-yellow"],
+    ["top", "ADMIN_COMMENT_TOP", ".tk-tag-red"],
+  ] as const)("管理操作 %s：失败保留状态，成功后更新", async (field, label, tag) => {
+    const update = vi.fn().mockReturnValue({ code: 1000, message: "请先登录" });
+    const alert = vi.fn();
+    window.alert = alert;
+    useFakeTcb({ COMMENT_SET_FOR_ADMIN: update });
+    setServerConfig({ IS_ADMIN: true });
+    const wrapper = mount(TkComment, {
+      props: { comment: makeComment() },
+    });
+    await flushPromises();
+    const button = wrapper
+      .findAll(".tk-actions button")
+      .find((item) => item.attributes("aria-label") === t(label))!;
+    await button.trigger("click");
+    await flushPromises();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "c1", set: { [field]: true } }),
+    );
+    expect(alert).toHaveBeenCalledWith("请先登录");
+    expect(wrapper.find(tag).exists()).toBe(false);
+
+    update.mockReturnValue({ code: 0 });
+    await button.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(tag).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("管理员删除：取消不请求，失败不刷新，成功才刷新", async () => {
+    const remove = vi.fn().mockReturnValue({ code: 1000, message: "请先登录" });
+    const ownRemove = vi.fn();
+    const alert = vi.fn();
+    window.alert = alert;
+    useFakeTcb({ COMMENT_DELETE_FOR_ADMIN: remove, COMMENT_DELETE_FOR_USER: ownRemove });
+    setServerConfig({ IS_ADMIN: true });
+    const wrapper = mount(TkComment, { props: { comment: makeComment() } });
+    await flushPromises();
+    const button = wrapper
+      .findAll(".tk-actions button")
+      .find((item) => item.text() === t("ADMIN_COMMENT_DELETE"))!;
+    await button.trigger("click");
+    expect(remove).not.toHaveBeenCalled();
+    await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), false);
+
+    await button.trigger("click");
+    await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+    await flushPromises();
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({ id: "c1" }));
+    expect(alert).toHaveBeenCalledWith("请先登录");
+    expect(wrapper.emitted("load")).toBeUndefined();
+
+    remove.mockReturnValue({ code: 0 });
+    await button.trigger("click");
+    await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+    await flushPromises();
+    expect(wrapper.emitted("load")).toHaveLength(1);
+    expect(ownRemove).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("本人删除仍使用用户接口，普通用户不显示管理按钮", async () => {
+    const remove = vi.fn().mockReturnValue({ code: 0 });
+    const adminRemove = vi.fn();
+    useFakeTcb({ COMMENT_DELETE_FOR_USER: remove, COMMENT_DELETE_FOR_ADMIN: adminRemove });
+    const wrapper = mount(TkComment, { props: { comment: makeComment({ isOwner: true }) } });
+    await flushPromises();
+    expect(wrapper.find(".tk-actions").exists()).toBe(false);
+    await wrapper.findComponent(TkAction).find(".tk-action-link").trigger("click");
+    await closeDeleteDialog(wrapper, t("COMMENT_DELETE_CONFIRM"), true);
+    await flushPromises();
+    expect(remove).toHaveBeenCalledWith(expect.objectContaining({ id: "c1" }));
+    expect(adminRemove).not.toHaveBeenCalled();
+    expect(wrapper.emitted("load")).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("本人删除遭服务端拒绝时保留内联错误事件，不刷新列表", async () => {
+    const alert = vi.fn();
+    window.alert = alert;
+    useFakeTcb({ COMMENT_DELETE_FOR_USER: { code: 1000, message: "无权删除" } });
+    const wrapper = mount(TkComment, { props: { comment: makeComment({ isOwner: true }) } });
+    await flushPromises();
+    await wrapper.findComponent(TkAction).find(".tk-action-link").trigger("click");
+    await closeDeleteDialog(wrapper, t("COMMENT_DELETE_CONFIRM"), true);
+    const error = wrapper.emitted("error")?.[0]?.[0] as TwikooError;
+    expect(error.kind).toBe("REJECTED");
+    expect(error.message).toBe("无权删除");
+    expect(wrapper.emitted("load")).toBeUndefined();
+    expect(alert).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("渲染昵称/正文/站长标签与回复列表", async () => {
     useFakeTcb();
     const wrapper = mount(TkComment, {
@@ -437,6 +588,77 @@ describe("TkComment", () => {
     // happy-dom 下 scrollHeight 为 0，故默认不显示展开按钮（与 1.x 同判定）
     expect(wrapper.find(".tk-expand").exists()).toBe(false);
   });
+});
+
+describe("评论图片放大", () => {
+  it.each(["comment", "admin"])(
+    "%s：放大普通图片，加载和缩放后居中，关闭后清理监听",
+    async (view) => {
+      useFakeTcb({
+        GET_CONFIG_FOR_ADMIN: { code: 0, config: { LIGHTBOX: "true" } },
+        COMMENT_GET_FOR_ADMIN: {
+          code: 0,
+          count: 1,
+          data: [
+            {
+              _id: "c1",
+              nick: "甲",
+              comment:
+                '<p><img src="https://example.com/photo.png"></p><p><img class="tk-owo-emotion" src="https://example.com/emoji.png"></p>',
+              created: 1,
+            },
+          ],
+        },
+      });
+      setServerConfig({ LIGHTBOX: "true" });
+      const container = document.createElement("div");
+      container.className = "twikoo";
+      document.body.appendChild(container);
+      const wrapper =
+        view === "admin"
+          ? mount(TkAdminComment, { attachTo: container })
+          : mount(TkComment, {
+              attachTo: container,
+              props: {
+                comment: makeComment({
+                  comment:
+                    '<p><img src="https://example.com/photo.png"></p><p><img class="tk-owo-emotion" src="https://example.com/emoji.png"></p>',
+                }),
+              },
+            });
+      await flushPromises();
+      await wrapper.find(".tk-content img.tk-owo-emotion").trigger("click");
+      expect(container.querySelector(".tk-lightbox")).toBeNull();
+      await wrapper.findAll(".tk-content img")[0].trigger("click");
+      const lightbox = container.querySelector<HTMLElement>(".tk-lightbox")!;
+      const image = lightbox.querySelector<HTMLImageElement>("img")!;
+      expect(image.src).toBe("https://example.com/photo.png");
+      Object.defineProperties(image, {
+        complete: { value: true },
+        naturalWidth: { value: 301 },
+      });
+      vi.spyOn(window, "devicePixelRatio", "get").mockReturnValue(2);
+      const bounds = vi
+        .spyOn(lightbox, "getBoundingClientRect")
+        .mockReturnValue(new DOMRect(0, 0, 1000, 800));
+      vi.spyOn(image, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 301, 201));
+      image.dispatchEvent(new Event("load"));
+      expect(image.style.left).toBe("349.5px");
+      expect(image.style.top).toBe("299.5px");
+      expect(image.style.transform).toBe("none");
+      bounds.mockReturnValue(new DOMRect(0, 0, 1200, 900));
+      window.dispatchEvent(new Event("resize"));
+      expect(image.style.left).toBe("449.5px");
+      expect(image.style.top).toBe("349.5px");
+      lightbox.click();
+      expect(container.querySelector(".tk-lightbox")).toBeNull();
+      bounds.mockClear();
+      window.dispatchEvent(new Event("resize"));
+      image.dispatchEvent(new Event("load"));
+      expect(bounds).not.toHaveBeenCalled();
+      wrapper.unmount();
+    },
+  );
 });
 
 describe("TkComments", () => {
@@ -543,6 +765,293 @@ describe("App 渲染", () => {
     expect(wrapper.find(".tk-comments").exists()).toBe(true);
     expect(wrapper.find(".tk-footer").exists()).toBe(true);
     expect(wrapper.find(".tk-admin-container").exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe("操作失败与响应丢失", () => {
+  const originalAlert = window.alert;
+  const originalConfirm = window.confirm;
+
+  beforeEach(() => {
+    window.alert = vi.fn();
+    window.confirm = vi.fn(() => true);
+  });
+
+  afterEach(() => {
+    window.alert = originalAlert;
+    window.confirm = originalConfirm;
+  });
+
+  it.each(["delete-user", "delete-admin", "isSpam", "top", "like", "dislike"])(
+    "%s 响应丢失后提示原因并刷新到服务端状态",
+    async (action) => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+      let comment: CommentDto | null = makeComment({ isOwner: true });
+      const read = vi.fn(() => ({
+        code: 0,
+        data: comment ? [{ ...comment }] : [],
+        count: comment ? 1 : 0,
+      }));
+      const mutate = vi.fn(() => {
+        if (action.startsWith("delete")) comment = null;
+        else if (action === "isSpam") comment!.isSpam = true;
+        else if (action === "top") comment!.top = true;
+        else if (action === "like") Object.assign(comment!, { ups: 4, liked: true });
+        else Object.assign(comment!, { downs: 1, disliked: true });
+        throw new TwikooError("NETWORK", "响应丢失");
+      });
+      useFakeTcb({
+        GET_CONFIG: { code: 0, config: { IS_ADMIN: true } },
+        COMMENT_GET: read,
+        COMMENT_DELETE_FOR_USER: mutate,
+        COMMENT_DELETE_FOR_ADMIN: mutate,
+        COMMENT_SET_FOR_ADMIN: mutate,
+        COMMENT_LIKE: mutate,
+      });
+      const wrapper = mount(TkComments);
+      await flushPromises();
+      const item = wrapper.findComponent(TkComment);
+      if (action === "delete-user" || action === "like" || action === "dislike") {
+        item.findComponent(TkAction).vm.$emit(action === "delete-user" ? "delete" : action);
+        if (action === "delete-user") {
+          await flushPromises();
+          await closeDeleteDialog(wrapper, t("COMMENT_DELETE_CONFIRM"), true);
+        }
+      } else {
+        const label =
+          action === "delete-admin"
+            ? "ADMIN_COMMENT_DELETE"
+            : action === "top"
+              ? "ADMIN_COMMENT_TOP"
+              : "ADMIN_COMMENT_HIDE";
+        const button = item
+          .findAll(".tk-actions button")
+          .find(
+            (button) => button.attributes("aria-label") === t(label) || button.text() === t(label),
+          )!;
+        await button.trigger("click");
+        if (action === "delete-admin") {
+          await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+        }
+      }
+      await flushPromises();
+      expect(alert).toHaveBeenCalledWith("响应丢失");
+      expect(mutate).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledTimes(2);
+      if (action.startsWith("delete"))
+        expect(wrapper.findComponent(TkComment).exists()).toBe(false);
+      else if (action === "isSpam") expect(wrapper.find(".tk-tag-yellow").exists()).toBe(true);
+      else if (action === "top") expect(wrapper.find(".tk-tag-red").exists()).toBe(true);
+      else
+        expect(wrapper.find(action === "like" ? ".tk-liked" : ".tk-disliked").exists()).toBe(true);
+      wrapper.unmount();
+    },
+  );
+
+  it.each([
+    ["isSpam", "ADMIN_COMMENT_HIDE", "ADMIN_COMMENT_SHOW", ".tk-tag-yellow"],
+    ["top", "ADMIN_COMMENT_TOP", "ADMIN_COMMENT_UNTOP", ".tk-tag-red"],
+  ] as const)(
+    "%s 先成功再取消时响应丢失，也能同步回最初的属性值",
+    async (field, enable, disable, tag) => {
+      let comment = makeComment();
+      let updates = 0;
+      useFakeTcb({
+        GET_CONFIG: { code: 0, config: { IS_ADMIN: true } },
+        COMMENT_GET: () => ({ code: 0, data: [{ ...comment }], count: 1 }),
+        COMMENT_SET_FOR_ADMIN: () => {
+          comment = { ...comment, [field]: ++updates === 1 };
+          if (updates > 1) throw new Error("响应丢失");
+          return { code: 0 };
+        },
+      });
+      const wrapper = mount(TkComments);
+      await flushPromises();
+      await wrapper
+        .findAll(".tk-actions button")
+        .find((button) => button.attributes("aria-label") === t(enable))!
+        .trigger("click");
+      await flushPromises();
+      expect(wrapper.find(tag).exists()).toBe(true);
+      await wrapper
+        .findAll(".tk-actions button")
+        .find((button) => button.attributes("aria-label") === t(disable))!
+        .trigger("click");
+      await flushPromises();
+      expect(wrapper.find(tag).exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+
+  it.each(["like", "dislike"] as const)("%s 业务失败不修改计数，并允许重试", async (action) => {
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    const update = vi.fn().mockReturnValue({ code: 1000, message: "禁止操作" });
+    useFakeTcb({ COMMENT_LIKE: update });
+    const wrapper = mount(TkComment, { props: { comment: makeComment() } });
+    await flushPromises();
+    wrapper.findComponent(TkAction).vm.$emit(action);
+    await flushPromises();
+    expect(alert).toHaveBeenCalledWith("禁止操作");
+    expect(wrapper.findComponent(TkAction).props()).toMatchObject({
+      likeCount: 3,
+      dislikeCount: 0,
+    });
+    expect(wrapper.emitted("load")).toBeUndefined();
+    update.mockReturnValue({ code: 0 });
+    wrapper.findComponent(TkAction).vm.$emit(action);
+    await flushPromises();
+    expect(wrapper.find(action === "like" ? ".tk-liked" : ".tk-disliked").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it.each(["ADMIN_COMMENT_DELETE", "ADMIN_COMMENT_HIDE", "ADMIN_COMMENT_TOP"] as const)(
+    "管理面板 %s 检查业务码，处理响应丢失和刷新失败，并允许重试",
+    async (label) => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+      let data = [{ ...makeComment(), _id: "c1" }];
+      const read = vi.fn(() => ({ code: 0, data, count: data.length }));
+      const mutate = vi.fn().mockReturnValue({ code: 1000, message: "请先登录" });
+      useFakeTcb({
+        COMMENT_GET_FOR_ADMIN: read,
+        COMMENT_SET_FOR_ADMIN: mutate,
+        COMMENT_DELETE_FOR_ADMIN: mutate,
+      });
+      const wrapper = mount(TkAdminComment);
+      await flushPromises();
+      const button = wrapper.findAll("button").find((button) => button.text() === t(label))!;
+      await button.trigger("click");
+      if (label === "ADMIN_COMMENT_DELETE") {
+        await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+      }
+      await flushPromises();
+      expect(alert).toHaveBeenCalledWith("请先登录");
+      expect(read).toHaveBeenCalledTimes(1);
+      mutate.mockImplementation(() => {
+        throw new Error("响应丢失");
+      });
+      read.mockImplementationOnce(() => {
+        throw new Error("刷新失败");
+      });
+      await button.trigger("click");
+      if (label === "ADMIN_COMMENT_DELETE") {
+        await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+      }
+      await flushPromises();
+      expect(alert).toHaveBeenCalledWith("响应丢失");
+      expect(alert).toHaveBeenCalledWith("刷新失败");
+      mutate.mockImplementation(() => {
+        data = [];
+        throw new Error("响应丢失");
+      });
+      await button.trigger("click");
+      if (label === "ADMIN_COMMENT_DELETE") {
+        await closeDeleteDialog(wrapper, t("ADMIN_COMMENT_DELETE_CONFIRM"), true);
+      }
+      await flushPromises();
+      expect(mutate).toHaveBeenCalledTimes(3);
+      expect(wrapper.find(".tk-admin-comment-item").exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+
+  it("配置保存和邮件测试失败时显示原因并解除加载状态", async () => {
+    const readConfig = vi.fn().mockReturnValue({ code: 0, config: {} });
+    const save = vi.fn().mockReturnValue({ code: 1000, message: "配置被拒绝" });
+    const email = vi.fn(() => {
+      throw new Error("邮件连接失败");
+    });
+    useFakeTcb({
+      GET_CONFIG_FOR_ADMIN: readConfig,
+      SET_CONFIG: save,
+      EMAIL_TEST: email,
+    });
+    const wrapper = mount(TkAdminConfig);
+    await flushPromises();
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.find(".tk-admin-config-message").text()).toBe("配置被拒绝");
+    save.mockImplementation(() => {
+      throw new Error("保存响应丢失");
+    });
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.find(".tk-admin-config-message").text()).toBe("保存响应丢失");
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(readConfig).toHaveBeenCalledTimes(1);
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === t("ADMIN_CONFIG_EMAIL_TEST_BTN"))!
+      .trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("邮件连接失败");
+    wrapper.unmount();
+  });
+
+  it.each(["COMMENT_EXPORT_FOR_ADMIN", "GET_CONFIG_FOR_ADMIN"])(
+    "%s 导出失败提示原因并允许重试",
+    async (event) => {
+      const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+      const request = vi.fn().mockReturnValue({ code: 1000, message: "无权导出" });
+      useFakeTcb({ [event]: request });
+      const wrapper = mount(TkAdminExport);
+      const label =
+        event === "COMMENT_EXPORT_FOR_ADMIN" ? "ADMIN_EXPORT_COMMENT" : "ADMIN_CONFIG_EXPORT";
+      const button = wrapper.findAll("button").find((button) => button.text() === t(label))!;
+      await button.trigger("click");
+      await flushPromises();
+      expect(alert).toHaveBeenCalledWith("无权导出");
+      request.mockImplementation(() => {
+        throw new Error("导出连接失败");
+      });
+      await button.trigger("click");
+      await flushPromises();
+      expect(alert).toHaveBeenCalledWith("导出连接失败");
+      expect(button.attributes("disabled")).toBeUndefined();
+      wrapper.unmount();
+    },
+  );
+
+  it("设置密码响应丢失后重新检查并切换到登录表单", async () => {
+    let status = false;
+    useFakeTcb({
+      GET_PASSWORD_STATUS: () => ({ code: 0, status }),
+      SET_PASSWORD: () => {
+        status = true;
+        throw new Error("密码响应丢失");
+      },
+    });
+    const wrapper = mount(TkAdmin);
+    await wrapper.setProps({ show: true } as never);
+    await flushPromises();
+    const inputs = wrapper.findAll(".tk-regist input");
+    for (const input of inputs) await input.setValue("password");
+    await wrapper.find(".tk-regist-button").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".tk-regist").exists()).toBe(false);
+    expect(wrapper.find(".tk-login-msg").text()).toContain("密码响应丢失");
+    expect(wrapper.find("[data-tk-loading]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("登录请求失败显示原因并允许重试", async () => {
+    const login = vi.fn(() => {
+      throw new Error("登录连接失败");
+    });
+    useFakeTcb({ GET_PASSWORD_STATUS: { code: 0, status: true }, LOGIN: login });
+    const wrapper = mount(TkAdmin, { props: { show: false } });
+    await wrapper.setProps({ show: true } as never);
+    await flushPromises();
+    await wrapper.find("input[type='password']").setValue("password");
+    const button = wrapper.findAll("button").find((button) => button.text() === t("ADMIN_LOGIN"))!;
+    await button.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".tk-login-msg").text()).toContain("登录连接失败");
+    await button.trigger("click");
+    await flushPromises();
+    expect(login).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
 });
@@ -802,6 +1311,24 @@ describe("配置导出 / 导入（复用 GET_CONFIG_FOR_ADMIN + SET_CONFIG，不
       ),
     );
     expect(calls).toEqual([]);
+    expect(findButton(wrapper, t("ADMIN_CONFIG_IMPORT")).attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("评论导入业务失败不显示成功，并解除加载状态", async () => {
+    useRecordingTcb({ COMMENT_IMPORT_FOR_ADMIN: { code: 1000, message: "无权导入" } });
+    Object.assign(getAppState().tcb!.app, {
+      uploadFile: async () => ({ fileID: "file" }),
+    });
+    const wrapper = await mountImport();
+    injectFile(wrapper, "[]");
+    await findButton(wrapper, t("ADMIN_IMPORT_COMMENT")).trigger("click");
+    await vi.waitFor(() => {
+      const log = (wrapper.find("textarea").element as HTMLTextAreaElement).value;
+      expect(log).toContain("无权导入");
+      expect(log).not.toContain(t("ADMIN_IMPORT_IMPORTED"));
+    });
+    expect(findButton(wrapper, t("ADMIN_IMPORT_COMMENT")).attributes("disabled")).toBeUndefined();
     wrapper.unmount();
   });
 });

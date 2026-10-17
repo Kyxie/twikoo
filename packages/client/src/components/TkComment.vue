@@ -3,7 +3,7 @@
 
   职责：主楼/回复共用同一组件（模板内自引用实现楼中楼递归）；点赞/点踩、
   回复框挂载、内容与回复列表的展开折叠、图片灯箱、UA/归属地信息行、
-  站长内联管理按钮（隐藏/置顶）。
+  站长内联管理按钮（隐藏/置顶/删除）。
 
   与 1.x 的关键差异（Vue3 约束，非行为差异）：
   - 1.x 直接 `Object.assign(this.comment, set)` 改 props 对象；Vue3 禁改 props，
@@ -84,6 +84,9 @@
             >
               <TkIcon name="thumbtack" aria-hidden="true" />
             </button>
+            <button @click="onDelete(true)">
+              {{ t("ADMIN_COMMENT_DELETE") }}
+            </button>
           </small>
         </div>
         <TkAction
@@ -97,7 +100,7 @@
           @like="onLike"
           @dislike="onDislike"
           @reply="onReply"
-          @delete="onDelete"
+          @delete="onDelete(false)"
         />
       </div>
       <div
@@ -114,7 +117,7 @@
         </span>
         <!-- 正文：服务端已 DOMPurify 消毒，客户端再走一次 sanitizeHtml 双保险 -->
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <span ref="commentRef" @click="popupLightbox" v-html="sanitizedComment"></span>
+        <span ref="commentRef" @click="onContentClick" v-html="sanitizedComment"></span>
       </div>
       <div v-if="showContentExpand" class="tk-expand-wrap">
         <div class="tk-expand" @click="isContentExpanded = true">
@@ -181,7 +184,10 @@
         </div>
       </div>
     </div>
-    <TkConfirmDialog ref="confirmDialogRef" :message="t('COMMENT_DELETE_CONFIRM')" />
+    <TkConfirmDialog
+      ref="confirmDialogRef"
+      :message="t(deleteIsAdmin ? 'ADMIN_COMMENT_DELETE_CONFIRM' : 'COMMENT_DELETE_CONFIRM')"
+    />
   </div>
 </template>
 
@@ -195,6 +201,7 @@ import TkConfirmDialog from "./TkConfirmDialog.vue";
 import {
   call,
   convertLink,
+  popupLightbox,
   renderCode,
   renderLinks,
   renderMath,
@@ -202,7 +209,13 @@ import {
   t,
   timeago,
 } from "../utils";
-import { getAppState, TwikooError } from "../utils/api";
+import {
+  getAppState,
+  getResponse,
+  getErrorMessage,
+  TwikooResponseError,
+  TwikooError,
+} from "../utils/api";
 import { getServerConfig } from "../utils/state";
 import { EMPTY_CONFIG } from "./defaults";
 import type { CommentDto, ServerConfig } from "../types";
@@ -231,6 +244,8 @@ const emit = defineEmits<{
   (e: "error", error: TwikooError): void;
 }>();
 const confirmDialogRef = ref<{ open(): Promise<boolean> }>();
+/** 当前删除入口对应的确认文案。 */
+const deleteIsAdmin = ref(false);
 
 /** 操作系统图标表（1.x 同表） */
 const osList: Record<string, string> = {
@@ -384,10 +399,9 @@ async function onLike(): Promise<void> {
   if (likeLoading.value) return;
   likeLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_LIKE", {
-      id: props.comment.id,
-      type: "up",
-    });
+    getResponse(
+      await call(getAppState().tcb, "COMMENT_LIKE", { id: props.comment.id, type: "up" }),
+    );
     if (liked.value) {
       ups.value--;
     } else {
@@ -396,6 +410,9 @@ async function onLike(): Promise<void> {
     }
     liked.value = !liked.value;
     disliked.value = false;
+  } catch (e) {
+    alert(getErrorMessage(e));
+    if (!(e instanceof TwikooResponseError)) emit("load");
   } finally {
     likeLoading.value = false;
   }
@@ -406,10 +423,9 @@ async function onDislike(): Promise<void> {
   if (likeLoading.value) return;
   likeLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_LIKE", {
-      id: props.comment.id,
-      type: "down",
-    });
+    getResponse(
+      await call(getAppState().tcb, "COMMENT_LIKE", { id: props.comment.id, type: "down" }),
+    );
     if (disliked.value) {
       downs.value--;
     } else {
@@ -418,6 +434,9 @@ async function onDislike(): Promise<void> {
     }
     disliked.value = !disliked.value;
     liked.value = false;
+  } catch (e) {
+    alert(getErrorMessage(e));
+    if (!(e instanceof TwikooResponseError)) emit("load");
   } finally {
     likeLoading.value = false;
   }
@@ -432,16 +451,38 @@ function onReply(id: string): void {
   emit("reply", props.comment.id);
 }
 
-/** 删除自己的评论（1.x onDelete 对齐：二次确认 + COMMENT_DELETE_FOR_USER） */
-async function onDelete(): Promise<void> {
+/** 删除评论：保留自定义确认框，按入口选择本人或管理员接口。 */
+async function onDelete(isAdmin: boolean): Promise<void> {
+  if (adminLoading.value) return;
+  deleteIsAdmin.value = isAdmin;
   if (!(await confirmDialogRef.value?.open())) return;
-  const res = await call(getAppState().tcb, "COMMENT_DELETE_FOR_USER", {
-    id: props.comment.id,
-  });
-  const payload = (res.result ?? res) as { code?: number; message?: string };
-  if (payload.code)
-    emit("error", new TwikooError("REJECTED", payload.message ?? t("COMMENT_FAILED")));
-  else emit("load");
+  adminLoading.value = true;
+  try {
+    getResponse(
+      await call(
+        getAppState().tcb,
+        isAdmin ? "COMMENT_DELETE_FOR_ADMIN" : "COMMENT_DELETE_FOR_USER",
+        { id: props.comment.id },
+      ),
+    );
+    emit("load");
+  } catch (e) {
+    if (isAdmin || !(e instanceof TwikooResponseError)) alert(getErrorMessage(e));
+    if (!isAdmin) {
+      emit(
+        "error",
+        e instanceof TwikooResponseError
+          ? new TwikooError("REJECTED", e.message)
+          : e instanceof TwikooError
+            ? e
+            : new TwikooError("UNKNOWN", getErrorMessage(e)),
+      );
+    }
+    // 通信失败并不代表删除未执行，重新读取服务端状态，避免重复提交。
+    if (!(e instanceof TwikooResponseError)) emit("load");
+  } finally {
+    adminLoading.value = false;
+  }
 }
 
 /**
@@ -480,10 +521,15 @@ function onRefreshed(): void {
 
 /** 检查当前访问者身份（1.x checkAuth 对齐：仅 tcb 通道需异步判定，非 tcb 路径由 `isLogin` computed 响应式读取） */
 async function checkAuth(): Promise<void> {
-  const { tcb } = getAppState();
-  if (tcb?.auth) {
-    const currentUser = await tcb.auth.getCurrentUser();
-    tcbLoggedIn.value = currentUser.loginType === "CUSTOM";
+  try {
+    const { tcb } = getAppState();
+    if (tcb?.auth) {
+      const currentUser = await tcb.auth.getCurrentUser();
+      tcbLoggedIn.value = currentUser.loginType === "CUSTOM";
+    }
+  } catch (e) {
+    tcbLoggedIn.value = false;
+    alert(getErrorMessage(e));
   }
 }
 
@@ -507,20 +553,10 @@ function handleTop(top: boolean): void {
  * 图片点击放大（`LIGHTBOX` 开启时；1.x popupLightbox 对齐）。
  * @param event 点击事件
  */
-function popupLightbox(event: MouseEvent): void {
-  if (getServerConfig().LIGHTBOX !== "true") return;
-  const target = event.target as HTMLElement;
-  if (target.tagName !== "IMG" || target.classList.contains("tk-owo-emotion")) return;
-  const lightbox = document.createElement("div");
-  lightbox.className = "tk-lightbox";
-  const lightboxImg = document.createElement("img");
-  lightboxImg.className = "tk-lightbox-image";
-  lightboxImg.src = (target as HTMLImageElement).src;
-  lightbox.appendChild(lightboxImg);
-  lightbox.addEventListener("click", () => {
-    document.body.removeChild(lightbox);
-  });
-  document.body.appendChild(lightbox);
+function onContentClick(event: MouseEvent): void {
+  if (getServerConfig().LIGHTBOX === "true") {
+    popupLightbox(event);
+  }
 }
 
 /**
@@ -528,14 +564,19 @@ function popupLightbox(event: MouseEvent): void {
  * @param set 要设置的字段
  */
 async function setComment(set: { isSpam?: boolean; top?: boolean }): Promise<void> {
+  if (adminLoading.value) return;
   adminLoading.value = true;
   try {
-    await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", {
+    const res = await call(getAppState().tcb, "COMMENT_SET_FOR_ADMIN", {
       id: props.comment.id,
       set,
     });
+    getResponse(res);
     if (set.isSpam !== undefined) localSpam.value = set.isSpam;
     if (set.top !== undefined) localTop.value = set.top;
+  } catch (e) {
+    alert(getErrorMessage(e));
+    if (!(e instanceof TwikooResponseError)) emit("load");
   } finally {
     adminLoading.value = false;
   }
@@ -553,32 +594,30 @@ function applyContentRendering(): void {
 }
 
 watch(
-  () => props.comment.isSpam,
-  (value) => {
-    localSpam.value = value === true;
+  () => [props.comment, props.comment.isSpam],
+  () => {
+    localSpam.value = props.comment.isSpam === true;
   },
 );
 watch(
-  () => props.comment.top,
-  (value) => {
-    localTop.value = value === true;
+  () => [props.comment, props.comment.top],
+  () => {
+    localTop.value = props.comment.top === true;
   },
 );
 watch(
-  () => props.comment.ups,
+  () => [props.comment, props.comment.ups, props.comment.liked],
   () => {
     ups.value = props.comment.ups ?? 0;
     liked.value = props.comment.liked === true;
   },
-  { immediate: true },
 );
 watch(
-  () => props.comment.downs,
+  () => [props.comment, props.comment.downs, props.comment.disliked],
   () => {
     downs.value = props.comment.downs ?? 0;
     disliked.value = props.comment.disliked === true;
   },
-  { immediate: true },
 );
 watch(
   () => props.config.HIGHLIGHT,

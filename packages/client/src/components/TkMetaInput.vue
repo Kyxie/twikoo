@@ -62,6 +62,7 @@ const props = withDefaults(
 /** 组件事件（1.x `$emit('update', { meta, valid })` 同名保留） */
 const emit = defineEmits<{
   (e: "update", payload: { meta: MetaData; valid: boolean }): void;
+  (e: "validate", valid: boolean): void;
 }>();
 
 /** 三个 meta 字段的键 */
@@ -226,7 +227,7 @@ function syncFromProps(): void {
 watch(() => [props.nick, props.mail, props.link], syncFromProps);
 
 watch(requiredFields, () => {
-  emit("update", { meta: { ...metaData }, valid: checkValid() });
+  emit("validate", checkValid());
 });
 
 watch(

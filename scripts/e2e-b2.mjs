@@ -8,7 +8,7 @@
  * 错误卡片 / i18n 切换 / 管理员登录与配置读写 / 管理端评论检索。
  *
  * 为什么不用真实浏览器：本仓 CI 不引入浏览器依赖。jsdom 足以覆盖 DOM 渲染、事件冒泡、
- * XHR（同源直连 tkserver）、localStorage 与 UMD 全局挂载；**视觉 / 暗色 / 响应式属人工项**，
+ * fetch（同源直连 tkserver）、localStorage 与 UMD 全局挂载；**视觉 / 暗色 / 响应式属人工项**，
  * 见报告的「交用户清单」。
  *
  * 用法：
@@ -24,6 +24,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { JSDOM } from "jsdom";
+import { installFetch } from "./jsdom-fetch.mjs";
 
 /** 仓库根（本文件位于 `scripts/`） */
 const ROOT = resolve(new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
@@ -230,6 +231,10 @@ async function main() {
       },
     );
     const { window } = dom;
+
+    // jsdom 不实现 fetch —— 注入同源桩
+    installFetch(window);
+
     const doc = window.document;
 
     /** 查询单个元素 */
@@ -441,7 +446,7 @@ async function main() {
       await waitFor(() => !q(".tk-send").hasAttribute("disabled"), "填齐后可用");
     });
     await check("预览：Markdown 渲染 + 消毒（加粗）", async () => {
-      click(q(".tk-preview"));
+      click(q(".tk-preview-toggle"));
       await waitFor(() => q(".tk-preview-container strong"), "预览渲染");
       assert(q(".tk-preview-container").textContent.includes("E2E 提交测试"), "预览内容缺失");
     });
@@ -454,6 +459,7 @@ async function main() {
       fillMeta("E2E 访客", "e2e@example.com");
       setValue(q(".tk-submit textarea"), "这条包含广告字样");
       await waitFor(() => !q(".tk-send").hasAttribute("disabled"), "发送键可用");
+      await waitFor(() => q(".tk-send").dataset.status === "idle", "发送按钮恢复可点击");
       click(q(".tk-send"));
       await waitFor(() => q(".tk-error"), "错误卡片出现", { timeout: 20000 });
       assert(q(".tk-error__title").textContent.trim().length > 0, "错误卡片标题为空");
@@ -523,8 +529,14 @@ async function main() {
       assert(q(".tk-pagination-pager"), "缺少分页控件");
       const selectEl = q(".tk-admin-comment-filter-type");
       assert(selectEl, "缺少类型筛选下拉");
-      selectEl.value = "HIDDEN";
-      selectEl.dispatchEvent(new window.Event("change", { bubbles: true }));
+      click(selectEl.querySelector(".tk-select-trigger"));
+      await waitFor(() => !selectEl.querySelector("[role=listbox]").hidden, "筛选选项展开");
+      click(selectEl.querySelectorAll("[role=option]")[2]);
+      await waitFor(
+        () =>
+          selectEl.querySelectorAll("[role=option]")[2].getAttribute("aria-selected") === "true",
+        "筛选值更新",
+      );
       click(qa(".tk-admin-comment-filter .tk-button").at(-1));
       await waitFor(() => qa(".tk-admin-comment-item").length === 1, "筛选 HIDDEN 结果", {
         timeout: 20000,

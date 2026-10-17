@@ -21,6 +21,7 @@
           :link="link"
           :config="config"
           @update="onMetaUpdate"
+          @validate="isMetaValid = $event"
         />
         <div class="tk-editor" :class="{ 'tk-editor--preview': isPreviewing }">
           <div class="tk-editor-toolbar">
@@ -135,7 +136,7 @@ import TkInput from "../components/TkInput.vue";
 import TkIcon from "../components/TkIcon.vue";
 import { ICONS } from "../components/icons";
 import OwO from "../lib/owo";
-import { TwikooError, call, getAppState } from "../utils/api";
+import { TwikooError, call, getAppState, getErrorMessage } from "../utils/api";
 import {
   blobToDataURL,
   getHref,
@@ -747,8 +748,8 @@ async function send(): Promise<boolean> {
     error.value =
       e instanceof TwikooError
         ? e
-        : new TwikooError("UNKNOWN", `${t("COMMENT_FAILED")}: ${(e as Error).message}`, {
-            rawMessage: (e as Error).message,
+        : new TwikooError("UNKNOWN", `${t("COMMENT_FAILED")}: ${getErrorMessage(e)}`, {
+            rawMessage: getErrorMessage(e),
           });
     return false;
   } finally {
@@ -887,7 +888,7 @@ async function uploadPhotoToQcloud(
     uploadCompleted(fileIndex, fileName, fileType, tempUrlResult.fileList[0].tempFileURL);
   } catch (e) {
     console.error(e);
-    uploadFailed(fileIndex, fileType, (e as Error).message);
+    uploadFailed(fileIndex, fileType, getErrorMessage(e));
   }
 }
 
@@ -913,6 +914,7 @@ async function uploadPhotoToThirdParty(
       data?: { url?: string };
       code?: number;
       err?: string;
+      message?: string;
     };
     if (result.data) {
       uploadCompleted(fileIndex, fileName, fileType, String(result.data.url));
@@ -920,11 +922,11 @@ async function uploadPhotoToThirdParty(
       uploadFailed(fileIndex, fileType, t("IMAGE_UPLOAD_NSFW"));
     } else {
       console.error(result);
-      uploadFailed(fileIndex, fileType, String(result.err));
+      uploadFailed(fileIndex, fileType, result.message ?? result.err ?? t("IMAGE_UPLOAD_FAILED"));
     }
   } catch (e) {
     console.error(e);
-    uploadFailed(fileIndex, fileType, (e as Error).message);
+    uploadFailed(fileIndex, fileType, getErrorMessage(e));
   }
 }
 

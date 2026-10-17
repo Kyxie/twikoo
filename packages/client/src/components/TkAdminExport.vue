@@ -24,7 +24,7 @@
 import { ref } from "vue";
 import TkButton from "../components/TkButton.vue";
 import { call, t } from "../utils";
-import { getAppState } from "../utils/api";
+import { getAppState, getResponse, getErrorMessage } from "../utils/api";
 
 /** 导出进行中 */
 const loading = ref(false);
@@ -36,13 +36,14 @@ const loading = ref(false);
 async function doExport(collection: string): Promise<boolean> {
   loading.value = true;
   try {
-    const res = await call(getAppState().tcb, "COMMENT_EXPORT_FOR_ADMIN", {
-      collection,
-    });
-    const result = (res.result ?? res) as { data?: unknown };
+    const res = await call(getAppState().tcb, "COMMENT_EXPORT_FOR_ADMIN", { collection });
+    const result = getResponse(res) as { data?: unknown };
     if (!result.data) return false;
     downloadJson(`twikoo-${collection}.json`, result.data);
     return true;
+  } catch (e) {
+    alert(getErrorMessage(e));
+    return false;
   } finally {
     loading.value = false;
   }
@@ -58,12 +59,15 @@ async function exportConfig(): Promise<boolean> {
   loading.value = true;
   try {
     const res = await call(getAppState().tcb, "GET_CONFIG_FOR_ADMIN", {});
-    const result = (res.result ?? res) as { config?: Record<string, unknown> };
+    const result = getResponse(res) as { config?: Record<string, unknown> };
     if (!result.config) return false;
     const config = { ...result.config };
     delete config.VERSION;
     downloadJson(`twikoo-config-${new Date().toISOString().slice(0, 10)}.json`, config);
     return true;
+  } catch (e) {
+    alert(getErrorMessage(e));
+    return false;
   } finally {
     loading.value = false;
   }

@@ -70,7 +70,7 @@ import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
 import TkSelect from "../components/TkSelect.vue";
 import { call, readAsText, t } from "../utils";
-import { getAppState } from "../utils/api";
+import { getAppState, getResponse, getErrorMessage, TwikooResponseError } from "../utils/api";
 import { EVENT_CONFIG_UPDATED, emit as busEmit } from "../utils/bus";
 
 /** 导入进行中 */
@@ -187,7 +187,7 @@ async function uploadFile(): Promise<boolean> {
     return true;
   } catch (e) {
     console.error(e);
-    log((e as Error).message);
+    log(getErrorMessage(e));
     return false;
   } finally {
     loading.value = false;
@@ -204,7 +204,7 @@ async function importFile(fileID: string): Promise<void> {
     fileId: fileID,
     source: source.value,
   });
-  const result = (res.result ?? res) as { log?: string };
+  const result = getResponse(res) as { log?: string };
   logText.value += result.log ?? "";
   log(`${t("ADMIN_IMPORT_IMPORTED")}${source.value}`);
 }
@@ -219,7 +219,7 @@ async function importFileToVercel(filePath: File): Promise<void> {
     file: await readAsText(filePath),
     source: source.value,
   });
-  const result = (res.result ?? res) as { log?: string };
+  const result = getResponse(res) as { log?: string };
   logText.value += result.log ?? "";
   log(`${t("ADMIN_IMPORT_IMPORTED")}${source.value}`);
 }
@@ -255,6 +255,7 @@ async function importConfig(): Promise<boolean> {
     return false;
   }
   loading.value = true;
+  let submitted = false;
   try {
     const parsed: unknown = JSON.parse(await readAsText(file));
     if (!isPlainConfig(parsed)) {
@@ -265,10 +266,9 @@ async function importConfig(): Promise<boolean> {
     const imported = { ...parsed };
     delete imported.CREDENTIALS;
     log(t("ADMIN_CONFIG_IMPORTING"));
-    const res = await call(getAppState().tcb, "SET_CONFIG", {
-      config: imported,
-    });
-    const result = (res.result ?? res) as { code?: number; message?: unknown };
+    submitted = true;
+    const res = await call(getAppState().tcb, "SET_CONFIG", { config: imported });
+    const result = getResponse(res) as { code?: number; message?: unknown };
     if (result.code === 0) {
       busEmit(EVENT_CONFIG_UPDATED);
       log(t("ADMIN_CONFIG_IMPORTED"));
@@ -280,7 +280,10 @@ async function importConfig(): Promise<boolean> {
     }
   } catch (e) {
     console.error(e);
-    log(`${t("ADMIN_CONFIG_IMPORT_FAILED")}${(e as Error).message}`);
+    log(`${t("ADMIN_CONFIG_IMPORT_FAILED")}${getErrorMessage(e)}`);
+    if (submitted && !(e instanceof TwikooResponseError)) {
+      busEmit(EVENT_CONFIG_UPDATED);
+    }
     return false;
   } finally {
     loading.value = false;

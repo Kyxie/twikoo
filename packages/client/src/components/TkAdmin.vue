@@ -165,7 +165,7 @@ import TkButton from "../components/TkButton.vue";
 import TkInput from "../components/TkInput.vue";
 import TkIcon from "../components/TkIcon.vue";
 import { logger, t } from "../utils";
-import { call, getAppState } from "../utils/api";
+import { call, getAppState, getResponse, getErrorMessage, TwikooResponseError } from "../utils/api";
 import { vLoading } from "../utils/directives";
 
 /** 组件属性 */
@@ -222,40 +222,35 @@ async function onLogin(): Promise<boolean> {
   }
   loading.value = true;
   loginErrorMessage.value = "";
-  const passwordMd5 = md5(password.value);
-  const tcb = getAppState().tcb;
-  const res = await call(tcb, "LOGIN", { password: passwordMd5 });
-  const result = (res.result ?? res) as {
-    message?: string;
-    ticket?: string;
-    code?: number;
-  };
-  if (result.message) {
-    loginErrorMessage.value = result.message;
-    loading.value = false;
-    return false;
-  } else if (result.ticket) {
-    try {
+  try {
+    const passwordMd5 = md5(password.value);
+    const tcb = getAppState().tcb;
+    const res = await call(tcb, "LOGIN", { password: passwordMd5 });
+    const result = getResponse(res) as { message?: string; ticket?: string; code?: number };
+    if (result.message) {
+      loginErrorMessage.value = result.message;
+      return false;
+    } else if (result.ticket) {
       await tcb?.auth?.customAuthProvider().signIn(result.ticket);
       logger.info("登录成功");
       password.value = "";
       await checkAuth();
-    } catch (err) {
-      logger.error("登录失败", err);
-      loading.value = false;
+    } else if (result.code === 0) {
+      logger.info("登录成功");
+      localStorage.setItem("twikoo-access-token", passwordMd5);
+      password.value = "";
+      await checkAuth();
+    } else {
       return false;
     }
-  } else if (result.code === 0) {
-    logger.info("登录成功");
-    localStorage.setItem("twikoo-access-token", passwordMd5);
-    password.value = "";
-    await checkAuth();
-  } else {
-    loading.value = false;
+    return true;
+  } catch (e) {
+    logger.error("登录失败", e);
+    loginErrorMessage.value = getErrorMessage(e);
     return false;
+  } finally {
+    loading.value = false;
   }
-  loading.value = false;
-  return true;
 }
 
 /**
@@ -265,47 +260,65 @@ async function onLogin(): Promise<boolean> {
 async function onLogout(evt: Event): Promise<void> {
   evt.preventDefault();
   loading.value = true;
-  const tcb = getAppState().tcb;
-  if (tcb?.auth) {
-    await tcb.auth.signOut();
-    await tcb.auth.anonymousAuthProvider().signIn();
-  } else {
-    localStorage.removeItem("twikoo-access-token");
+  try {
+    const tcb = getAppState().tcb;
+    if (tcb?.auth) {
+      await tcb.auth.signOut();
+      isLogin.value = false;
+      await tcb.auth.anonymousAuthProvider().signIn();
+    } else {
+      localStorage.removeItem("twikoo-access-token");
+    }
+    isLogin.value = false;
+  } catch (e) {
+    alert(getErrorMessage(e));
+  } finally {
+    loading.value = false;
   }
-  isLogin.value = false;
-  loading.value = false;
 }
 
 /** 首次设置密码并自动登录（1.x onRegist 对齐） */
 async function onRegist(): Promise<boolean> {
   loading.value = true;
-  const passwordMd5 = md5(password.value);
-  const res = await call(getAppState().tcb, "SET_PASSWORD", {
-    password: passwordMd5,
-    credentials: credentials.value,
-  });
-  const result = (res.result ?? res) as { code?: number; message?: string };
-  if (!result.code) {
+  try {
+    const passwordMd5 = md5(password.value);
+    const res = await call(getAppState().tcb, "SET_PASSWORD", {
+      password: passwordMd5,
+      credentials: credentials.value,
+    });
+    getResponse(res);
     isSetPassword.value = true;
     return await onLogin();
-  } else {
-    loginErrorMessage.value = t("ADMIN_REGIST_FAILED");
-    if (result.message) loginErrorMessage.value += `，${result.message}`;
-    logger.warn("Twikoo 注册失败", res);
-    loading.value = false;
+  } catch (e) {
+    loginErrorMessage.value = getErrorMessage(e);
+    if (!(e instanceof TwikooResponseError)) {
+      // 设置密码可能已经成功，重新检查后切换到登录表单，避免重复初始化。
+      try {
+        await checkIfPasswordSet();
+      } catch (refreshError) {
+        logger.warn("重新检查密码状态失败", refreshError);
+      }
+    }
     return false;
+  } finally {
+    loading.value = false;
   }
 }
 
 /** 面板显示时的初始化（1.x onShow 对齐） */
 async function onShow(): Promise<void> {
   loading.value = true;
-  await checkAuth();
-  if (!isLogin.value) {
-    await checkIfPasswordSet();
-    focusPassword();
+  try {
+    await checkAuth();
+    if (!isLogin.value) {
+      await checkIfPasswordSet();
+      focusPassword();
+    }
+  } catch (e) {
+    loginErrorMessage.value = getErrorMessage(e);
+  } finally {
+    loading.value = false;
   }
-  loading.value = false;
 }
 
 /** 聚焦密码输入框（1.x focusPassword 对齐：延迟等待面板动画） */
@@ -321,7 +334,7 @@ async function checkAuth(): Promise<void> {
     isLogin.value = currentUser.loginType === "CUSTOM";
   } else {
     const res = await call(tcb, "GET_CONFIG");
-    const result = (res.result ?? res) as { config?: { IS_ADMIN?: boolean } };
+    const result = getResponse(res) as { config?: { IS_ADMIN?: boolean } };
     isLogin.value = result?.config?.IS_ADMIN === true;
   }
 }
@@ -330,10 +343,7 @@ async function checkAuth(): Promise<void> {
 async function checkIfPasswordSet(): Promise<void> {
   try {
     const res = await call(getAppState().tcb, "GET_PASSWORD_STATUS");
-    const result = (res.result ?? res) as {
-      version?: string;
-      status?: boolean;
-    };
+    const result = getResponse(res) as { version?: string; status?: boolean };
     version.value = result.version ?? "";
     isSetPassword.value = result.status === true;
     isSetCredentials.value = !getAppState().tcb;
